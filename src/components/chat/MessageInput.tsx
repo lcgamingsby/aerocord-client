@@ -1,0 +1,330 @@
+﻿import React, { useState, useRef, useEffect } from 'react';
+import { PlusCircle, Smile, Sparkles, X, Image as ImageIcon, Send, Loader2, File, FileText, Film, Music, FileArchive, Paperclip, ShieldAlert } from 'lucide-react';
+import { Message } from '../../types';
+import { EmojiPicker } from './EmojiPicker';
+import { StickerPicker } from './StickerPicker';
+import { useToast } from '../../context/ToastContext';
+import { useAuth } from '../../context/AuthContext';
+import { apiUrl } from '../../config/api';
+
+interface MessageInputProps {
+  channelName: string;
+  isDM?: boolean;
+  replyingTo: Message | null;
+  onCancelReply: () => void;
+  onSendMessage: (content: string, attachments?: any[], stickerUrl?: string, replyToId?: string) => void;
+  onTyping: () => void;
+  onStopTyping: () => void;
+}
+
+export const MessageInput: React.FC<MessageInputProps> = ({
+  channelName,
+  isDM,
+  replyingTo,
+  onCancelReply,
+  onSendMessage,
+  onTyping,
+  onStopTyping
+}) => {
+  const { user } = useAuth();
+  const { showError, showInfo } = useToast();
+  const [content, setContent] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const isGuestUser = user?.isGuest || user?.id.startsWith('guest_') || user?.email.endsWith('@guest.aerocord.app');
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiRef = useRef<HTMLDivElement>(null);
+  const stickerRef = useRef<HTMLDivElement>(null);
+
+  // Close popovers on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (emojiRef.current && !emojiRef.current.contains(e.target as Node)) {
+        setShowEmojiPicker(false);
+      }
+      if (stickerRef.current && !stickerRef.current.contains(e.target as Node)) {
+        setShowStickerPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSend = () => {
+    if ((!content.trim() && attachments.length === 0) || isUploading) return;
+
+    onSendMessage(content.trim(), attachments, undefined, replyingTo?.id);
+    setContent('');
+    setAttachments([]);
+    onCancelReply();
+    onStopTyping();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleUploadClick = () => {
+    if (isGuestUser) {
+      showError(
+        'Batasan Akun Tamu',
+        'Akun tamu tidak dapat mengirim lampiran file/gambar. Silakan tingkatkan akun Anda ke akun permanen di Pengaturan Profil.'
+      );
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    if (isGuestUser) {
+      showError('Batasan Akun Tamu', 'Akun tamu tidak diizinkan mengirim file atau lampiran.');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const file = files[0];
+
+    // Max 15MB limit check (15 * 1024 * 1024 bytes)
+    const maxSizeBytes = 15 * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+      showError('Ukuran File Terlalu Besar', `Batas maksimum ukuran file adalah 15 MB. File Anda berukuran ${(file.size / (1024 * 1024)).toFixed(1)} MB.`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setIsUploading(true);
+    try {
+      const res = await fetch(apiUrl('/api/media/upload'), {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('aerocord_token')}`
+        },
+        body: formData
+      });
+      const data = await res.json();
+      const newAttachment = data.attachment || (data.url ? {
+        id: `att_${Date.now()}`,
+        url: data.url,
+        filename: file.name,
+        contentType: file.type,
+        size: file.size
+      } : null);
+
+      if (res.ok && newAttachment) {
+        setAttachments(prev => [...prev, newAttachment]);
+      } else {
+        showError('Upload Gagal', data.error || 'Gagal mengunggah file.');
+      }
+    } catch (err: any) {
+      showError('Upload Gagal', err.message || 'Kesalahan koneksi saat upload.');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const getFileIcon = (contentType: string = '', filename: string = '') => {
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    if (contentType.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+      return <ImageIcon size={20} className="text-indigo-400" />;
+    }
+    if (contentType.startsWith('video/') || ['mp4', 'mkv', 'webm', 'mov'].includes(ext)) {
+      return <Film size={20} className="text-rose-400" />;
+    }
+    if (contentType.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) {
+      return <Music size={20} className="text-emerald-400" />;
+    }
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+      return <FileArchive size={20} className="text-amber-400" />;
+    }
+    if (['pdf', 'doc', 'docx', 'txt', 'md'].includes(ext)) {
+      return <FileText size={20} className="text-cyan-400" />;
+    }
+    return <File size={20} className="text-slate-400" />;
+  };
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const isImageFile = (att: any) => {
+    const ext = att.filename?.split('.').pop()?.toLowerCase() || '';
+    return att.contentType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext);
+  };
+
+  return (
+    <div className="px-4 pb-5 pt-1 relative select-none">
+      {/* Replying banner */}
+      {replyingTo && (
+        <div className="flex items-center justify-between px-3 py-1.5 bg-[#181a20] rounded-t-2xl border-t border-l border-r border-white/10 text-xs text-slate-300">
+          <div className="flex items-center space-x-1.5 truncate">
+            <span className="text-slate-400">Membalas</span>
+            <span className="font-semibold text-indigo-400">
+              @{replyingTo.author?.username || 'User'}
+            </span>
+          </div>
+          <button
+            onClick={onCancelReply}
+            className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Attachment Previews */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2.5 p-3 bg-[#13161f] border-t border-l border-r border-white/10 rounded-t-2xl">
+          {attachments.map((att, idx) => (
+            <div key={idx} className="relative group rounded-2xl overflow-hidden border border-white/10 bg-[#0c0e14] p-2 flex items-center space-x-3 shadow-md max-w-xs">
+              {isImageFile(att) ? (
+                <img src={att.url} alt={att.filename} className="w-12 h-12 rounded-xl object-cover" />
+              ) : (
+                <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
+                  {getFileIcon(att.contentType, att.filename)}
+                </div>
+              )}
+              <div className="min-w-0 flex-1 pr-4">
+                <div className="text-xs font-bold text-slate-200 truncate">{att.filename}</div>
+                <div className="text-[10px] text-slate-400">{formatFileSize(att.size)}</div>
+              </div>
+              <button
+                onClick={() => setAttachments(prev => prev.filter((_, i) => i !== idx))}
+                className="absolute top-1.5 right-1.5 p-1 bg-black/60 hover:bg-rose-600 rounded-full text-white transition-colors cursor-pointer"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Main Input Box */}
+      <div className={`relative flex items-center bg-[#13161f] border border-white/10 px-3.5 py-2.5 shadow-xl transition-all ${
+        replyingTo || attachments.length > 0 ? 'rounded-b-2xl' : 'rounded-2xl'
+      }`}>
+        {/* Upload Button */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          className="hidden"
+        />
+        <button
+          onClick={handleUploadClick}
+          disabled={isUploading}
+          title={isGuestUser ? 'Akun tamu tidak dapat mengirim lampiran (Tingkatkan akun)' : 'Kirim File / Gambar (Maks 15 MB)'}
+          className={`p-1.5 rounded-xl transition-colors mr-2 cursor-pointer flex-shrink-0 ${
+            isGuestUser
+              ? 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'
+              : 'text-slate-400 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          {isUploading ? (
+            <Loader2 size={20} className="animate-spin text-indigo-400" />
+          ) : isGuestUser ? (
+            <ShieldAlert size={20} className="text-amber-400" />
+          ) : (
+            <Paperclip size={20} />
+          )}
+        </button>
+
+        {/* Textarea */}
+        <textarea
+          value={content}
+          onChange={(e) => {
+            setContent(e.target.value);
+            onTyping();
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder={isDM ? `Message @${channelName}` : `Message #${channelName}`}
+          rows={1}
+          className="flex-1 bg-transparent text-gray-100 placeholder-gray-500 text-sm focus:outline-none resize-none max-h-32 min-h-[22px] py-0.5 leading-relaxed"
+        />
+
+        {/* Action Buttons (Sticker, Emoji, Send) */}
+        <div className="flex items-center space-x-1.5 ml-2">
+          {/* Sticker Button */}
+          <div ref={stickerRef} className="relative">
+            <button
+              onClick={() => {
+                setShowStickerPicker(!showStickerPicker);
+                setShowEmojiPicker(false);
+              }}
+              title="Send a Sticker"
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                showStickerPicker ? 'text-[#5865f2] bg-[#313338]' : 'text-gray-400 hover:text-gray-200 hover:bg-[#313338]'
+              }`}
+            >
+              <Sparkles size={20} />
+            </button>
+            {showStickerPicker && (
+              <div className="absolute right-0 bottom-12 z-50">
+                <StickerPicker
+                  onSelectSticker={(url) => {
+                    onSendMessage('', [], url, replyingTo?.id);
+                    setShowStickerPicker(false);
+                    onCancelReply();
+                  }}
+                  onClose={() => setShowStickerPicker(false)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Emoji Button */}
+          <div ref={emojiRef} className="relative">
+            <button
+              onClick={() => {
+                setShowEmojiPicker(!showEmojiPicker);
+                setShowStickerPicker(false);
+              }}
+              title="Add Emoji"
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                showEmojiPicker ? 'text-[#f0b232] bg-[#313338]' : 'text-gray-400 hover:text-[#f0b232] hover:bg-[#313338]'
+              }`}
+            >
+              <Smile size={20} />
+            </button>
+            {showEmojiPicker && (
+              <div className="absolute right-0 bottom-12 z-50">
+                <EmojiPicker
+                  onSelectEmoji={(emoji) => setContent(prev => prev + emoji)}
+                  onClose={() => setShowEmojiPicker(false)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Send Button */}
+          {(content.trim() || attachments.length > 0) && (
+            <button
+              onClick={handleSend}
+              title="Send message"
+              className="p-1.5 bg-[#5865f2] hover:bg-[#4752c4] text-white rounded-lg transition-all animate-in zoom-in-75 duration-150 cursor-pointer"
+            >
+              <Send size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
