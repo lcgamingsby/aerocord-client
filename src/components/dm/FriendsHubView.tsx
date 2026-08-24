@@ -59,12 +59,6 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({ onStartDMWithUse
     ? displayedFriends.filter(f => f.friend.username.toLowerCase().includes(searchQuery.toLowerCase()))
     : displayedFriends;
 
-  const quickDemoAccounts = [
-    { name: 'Alice#1337', id: 'user_alice' },
-    { name: 'Bob#2048', id: 'user_bob' },
-    { name: 'Charlie#4096', id: 'user_charlie' }
-  ].filter(a => a.id !== user?.id);
-
   return (
     <div className="flex-1 flex flex-col bg-[#0d0f14] h-full overflow-hidden select-none">
       {/* Top Tab Navigation Bar */}
@@ -129,7 +123,7 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({ onStartDMWithUse
                 Tambah Teman
               </h3>
               <p className="text-xs text-slate-400 mb-4">
-                Ketik username dan tag AeroCord teman Anda (contoh: <code className="text-indigo-300">Alice#1337</code>).
+                Ketik username dan tag 4-digit teman Anda (contoh: <code className="text-indigo-300">username#1234</code>).
               </p>
 
               <div className="relative flex items-center bg-[#13161f] p-3 rounded-2xl border border-white/10 focus-within:border-indigo-500 shadow-lg">
@@ -151,25 +145,32 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({ onStartDMWithUse
               </div>
             </div>
 
-            {/* Quick Demo Add */}
-            <div className="p-5 rounded-3xl bg-[#13161f] border border-white/10 space-y-3 shadow-xl">
-              <div className="flex items-center space-x-2 text-xs font-bold text-indigo-400 uppercase tracking-wider">
-                <Sparkles size={16} />
-                <span>Uji Cepat: Tambah Akun Demo</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {quickDemoAccounts.map(demo => (
+            {/* Share Your Tag Card */}
+            {user && (
+              <div className="p-5 rounded-3xl bg-[#13161f] border border-white/10 space-y-2 shadow-xl">
+                <div className="flex items-center space-x-2 text-xs font-bold text-indigo-400 uppercase tracking-wider">
+                  <Sparkles size={16} />
+                  <span>Bagikan Tag Anda</span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Teman Anda dapat menambahkan Anda menggunakan tag AeroCord Anda:
+                </p>
+                <div className="p-3 bg-[#0c0e14] border border-white/5 rounded-2xl flex items-center justify-between">
+                  <span className="font-mono text-sm font-bold text-white tracking-wide">
+                    {user.username}#{user.discriminator}
+                  </span>
                   <button
-                    key={demo.id}
-                    onClick={() => handleSendRequest(demo.name)}
-                    className="p-3 bg-[#0c0e14] hover:bg-white/[0.04] border border-white/5 hover:border-indigo-500/50 rounded-2xl flex items-center justify-between transition-all text-left cursor-pointer"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${user.username}#${user.discriminator}`);
+                      showSuccess('Disalin!', 'Tag Anda berhasil disalin ke clipboard.');
+                    }}
+                    className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-xs font-bold text-slate-200 rounded-xl transition-all cursor-pointer"
                   >
-                    <span className="text-xs font-bold text-slate-100">{demo.name}</span>
-                    <UserPlus size={15} className="text-emerald-400" />
+                    Salin Tag
                   </button>
-                ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 

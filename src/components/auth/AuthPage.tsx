@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { MessageSquare, Check, X, ShieldCheck, Sparkles, User, Lock, Mail, ArrowRight, Gamepad2, Coffee, Zap, ShieldAlert, AlertCircle, Smartphone, FileCheck } from 'lucide-react';
 import { apiUrl } from '../../config/api';
@@ -333,20 +333,24 @@ export const AuthPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-indigo-600/25 transition-all flex items-center justify-center space-x-2 cursor-pointer mt-2 disabled:opacity-50"
+                className="w-full py-3 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all cursor-pointer flex items-center justify-center space-x-2"
               >
-                <span>{loading ? 'Memproses...' : isRegister ? 'Daftar Sekarang' : 'Masuk Akun'}</span>
-                <ArrowRight size={15} />
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <span>{isRegister ? 'Buat Akun Sekarang' : 'Masuk ke AeroCord'}</span>
+                )}
               </button>
             </form>
           </div>
 
           {/* Toggle Switch */}
-          <div className="mt-6 pt-4 border-t border-white/5 text-xs text-slate-400">
+          <div className="mt-6 text-center text-xs text-slate-400">
             {isRegister ? (
               <span>
-                Sudah memiliki akun?{' '}
+                Sudah punya akun?{' '}
                 <button
+                  type="button"
                   onClick={() => { setIsRegister(false); setError(''); }}
                   className="text-indigo-400 hover:underline font-semibold cursor-pointer"
                 >
@@ -355,8 +359,9 @@ export const AuthPage: React.FC = () => {
               </span>
             ) : (
               <span>
-                Belum punya akun?{' '}
+                Belum memiliki akun?{' '}
                 <button
+                  type="button"
                   onClick={() => { setIsRegister(true); setError(''); }}
                   className="text-indigo-400 hover:underline font-semibold cursor-pointer"
                 >
@@ -367,107 +372,71 @@ export const AuthPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Card: Quick Multi-User Test Hub */}
+        {/* Right Card: Feature Showcase & Guest Access */}
         <div className="md:col-span-5 bg-[#13161f]/90 backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl flex flex-col justify-between">
           <div>
             <div className="flex items-center space-x-2 text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2">
               <Sparkles size={14} />
-              <span>Multi-User Testing</span>
+              <span>Modern & Aman</span>
             </div>
-            <h3 className="text-lg font-bold text-white mb-1.5">Akun Demo 1-Klik</h3>
-            <p className="text-xs text-slate-400 mb-5 leading-relaxed">
-              Buka beberapa tab browser untuk menguji obrolan realtime dan WebRTC voice call antar pengguna secara langsung:
+            <h3 className="text-lg font-bold text-white mb-1.5">Fitur Unggulan</h3>
+            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+              Platform komunikasi real-time dengan standar keamanan tingkat tinggi:
             </p>
 
-            <div className="space-y-2.5">
-              {/* Alice */}
-              <button
-                onClick={() => handleQuickLogin('user_alice')}
-                disabled={loading}
-                className="w-full p-3 bg-[#0c0e14] hover:bg-white/[0.04] border border-white/5 hover:border-indigo-500/50 rounded-2xl flex items-center justify-between transition-all group cursor-pointer"
-              >
-                <div className="flex items-center space-x-3">
-                  <img
-                    src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80"
-                    alt="Alice"
-                    className="w-9 h-9 rounded-xl object-cover border border-indigo-500/40"
-                  />
-                  <div className="text-left">
-                    <div className="font-bold text-xs text-white group-hover:text-indigo-400 transition-colors">
-                      Alice #1337
-                    </div>
-                    <div className="text-[10px] text-slate-400">Server Owner & Admin</div>
-                  </div>
+            <div className="space-y-3">
+              <div className="p-3 bg-[#0c0e14] border border-white/5 rounded-2xl flex items-start space-x-3">
+                <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 flex-shrink-0 mt-0.5">
+                  <ShieldCheck size={16} />
                 </div>
-                <Zap size={16} className="text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
+                <div>
+                  <div className="text-xs font-bold text-white">Keamanan 4-Lapis</div>
+                  <div className="text-[11px] text-slate-400 leading-tight mt-0.5">Enkripsi AES-256-GCM, HMAC Integrity Seal, dan Sanitasi SQLi.</div>
+                </div>
+              </div>
 
-              {/* Bob */}
-              <button
-                onClick={() => handleQuickLogin('user_bob')}
-                disabled={loading}
-                className="w-full p-3 bg-[#0c0e14] hover:bg-white/[0.04] border border-white/5 hover:border-emerald-500/50 rounded-2xl flex items-center justify-between transition-all group cursor-pointer"
-              >
-                <div className="flex items-center space-x-3">
-                  <img
-                    src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80"
-                    alt="Bob"
-                    className="w-9 h-9 rounded-xl object-cover border border-emerald-500/40"
-                  />
-                  <div className="text-left">
-                    <div className="font-bold text-xs text-white group-hover:text-emerald-400 transition-colors">
-                      Bob #2048
-                    </div>
-                    <div className="text-[10px] text-slate-400">Gaming & Voice Pro</div>
-                  </div>
+              <div className="p-3 bg-[#0c0e14] border border-white/5 rounded-2xl flex items-start space-x-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 flex-shrink-0 mt-0.5">
+                  <Gamepad2 size={16} />
                 </div>
-                <Gamepad2 size={16} className="text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
+                <div>
+                  <div className="text-xs font-bold text-white">Voice & Video WebRTC</div>
+                  <div className="text-[11px] text-slate-400 leading-tight mt-0.5">Voice channel rendah latensi, screen sharing, dan panggilan langsung.</div>
+                </div>
+              </div>
 
-              {/* Charlie */}
-              <button
-                onClick={() => handleQuickLogin('user_charlie')}
-                disabled={loading}
-                className="w-full p-3 bg-[#0c0e14] hover:bg-white/[0.04] border border-white/5 hover:border-amber-500/50 rounded-2xl flex items-center justify-between transition-all group cursor-pointer"
-              >
-                <div className="flex items-center space-x-3">
-                  <img
-                    src="https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80"
-                    alt="Charlie"
-                    className="w-9 h-9 rounded-xl object-cover border border-amber-500/40"
-                  />
-                  <div className="text-left">
-                    <div className="font-bold text-xs text-white group-hover:text-amber-400 transition-colors">
-                      Charlie #4096
-                    </div>
-                    <div className="text-[10px] text-slate-400">Sound & Streamer</div>
-                  </div>
+              <div className="p-3 bg-[#0c0e14] border border-white/5 rounded-2xl flex items-start space-x-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 flex-shrink-0 mt-0.5">
+                  <Smartphone size={16} />
                 </div>
-                <Coffee size={16} className="text-amber-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
+                <div>
+                  <div className="text-xs font-bold text-white">Autentikasi 2FA</div>
+                  <div className="text-[11px] text-slate-400 leading-tight mt-0.5">Mendukung Google Authenticator (QR) dan File Kunci Keamanan.</div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Quick Custom Guest */}
+          {/* Guest Access Box */}
           <div className="mt-4 pt-4 border-t border-white/5">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-              Atau Masuk dengan Nama Tamu
+              Masuk Cepat Sebagai Tamu
             </div>
             <div className="flex items-center space-x-2">
               <input
                 type="text"
-                placeholder="Masukkan Nickname"
+                placeholder="Ketik Nama Panggilan"
                 value={guestName}
                 onChange={(e) => setGuestName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && guestName.trim() && handleQuickLogin(undefined, guestName)}
-                className="flex-1 px-3 py-2 bg-[#0c0e14] text-xs text-slate-200 rounded-xl border border-white/10 focus:border-indigo-500 focus:outline-none"
+                className="flex-1 px-3.5 py-2.5 bg-[#0c0e14] text-xs text-slate-200 rounded-xl border border-white/10 focus:border-indigo-500 focus:outline-none"
               />
               <button
                 onClick={() => handleQuickLogin(undefined, guestName)}
                 disabled={!guestName.trim() || loading}
-                className="px-4 py-2 bg-slate-800 hover:bg-indigo-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all cursor-pointer"
+                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-lg shadow-indigo-600/20 whitespace-nowrap"
               >
-                Masuk
+                Masuk Tamu
               </button>
             </div>
           </div>

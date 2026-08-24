@@ -20,6 +20,7 @@ import { UserSettingsModal } from './components/modals/UserSettingsModal';
 import { ServerSettingsModal } from './components/modals/ServerSettingsModal';
 import { UserProfileModal } from './components/modals/UserProfileModal';
 import { apiUrl } from './config/api';
+import { Sparkles, Plus } from 'lucide-react';
 
 const MainLayout: React.FC = () => {
   const { user, token } = useAuth();
@@ -28,7 +29,7 @@ const MainLayout: React.FC = () => {
   const { currentVoiceChannel } = useVoice();
 
   const [servers, setServers] = useState<Server[]>([]);
-  const [activeServerId, setActiveServerId] = useState<string | null>('srv_main');
+  const [activeServerId, setActiveServerId] = useState<string | null>(null);
   const [activeServer, setActiveServer] = useState<Server | null>(null);
   const [activeChannel, setActiveChannel] = useState<Channel | null>(null);
 
@@ -99,15 +100,23 @@ const MainLayout: React.FC = () => {
       });
       if (res.ok) {
         const data = await res.json();
-        setActiveServer(data.server);
-        const firstText = data.server.channels.find((c: Channel) => c.type === 'text') || data.server.channels[0];
-        if (firstText) {
-          setActiveChannel(firstText);
-          setActiveChannelId(firstText.id);
+        if (data.server) {
+          setActiveServer(data.server);
+          const firstText = data.server.channels?.find((c: Channel) => c.type === 'text') || data.server.channels?.[0];
+          if (firstText) {
+            setActiveChannel(firstText);
+            setActiveChannelId(firstText.id);
+          }
+          return;
         }
       }
+      // If server does not exist, fallback cleanly to Direct Messages
+      setActiveServerId(null);
+      setActiveServer(null);
     } catch (err) {
       console.error('Failed to fetch server details:', err);
+      setActiveServerId(null);
+      setActiveServer(null);
     }
   }, [token, setActiveChannelId]);
 
@@ -273,8 +282,29 @@ const MainLayout: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-slate-400 bg-[#0d0f14]">
-          Memuat server...
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-400 bg-[#0d0f14] p-6 text-center select-none animate-in fade-in duration-300">
+          <div className="w-16 h-16 rounded-3xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 mb-4 shadow-xl">
+            <Sparkles size={32} />
+          </div>
+          <h2 className="text-xl font-bold text-white mb-2">Selamat Datang di AeroCord!</h2>
+          <p className="text-xs text-slate-400 max-w-sm mb-6 leading-relaxed">
+            Pilih server di sebelah kiri atau buat server baru untuk mulai mengobrol dengan teman-teman Anda.
+          </p>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setIsCreateServerOpen(true)}
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-2xl shadow-lg shadow-indigo-600/25 transition-all cursor-pointer flex items-center space-x-2"
+            >
+              <Plus size={16} />
+              <span>Buat Server Baru</span>
+            </button>
+            <button
+              onClick={() => setActiveServerId(null)}
+              className="px-5 py-2.5 bg-white/5 hover:bg-white/10 text-white text-xs font-bold rounded-2xl border border-white/10 transition-all cursor-pointer"
+            >
+              Buka Obrolan Langsung (DM)
+            </button>
+          </div>
         </div>
       )}
 

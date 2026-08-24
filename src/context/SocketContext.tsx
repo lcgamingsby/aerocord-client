@@ -31,7 +31,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const { token, user } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [activeChannelId, setActiveChannelId] = useState<string | null>('chan_general');
+  const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [typingUsers, setTypingUsers] = useState<{ [channelId: string]: TypingUser[] }>({});
   const [onlineUsers, setOnlineUsers] = useState<Map<string, { status: UserStatus; customStatus?: string }>>(new Map());
 
