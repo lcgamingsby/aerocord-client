@@ -1,17 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { MessageSquare, Check, X, ShieldCheck, Sparkles, User, Lock, Mail, ArrowRight, Gamepad2, Coffee, Zap, ShieldAlert, AlertCircle, Smartphone, FileCheck } from 'lucide-react';
+import { MessageSquare, Check, X, ShieldCheck, User, Lock, Mail, ShieldAlert, Smartphone, FileCheck } from 'lucide-react';
 import { apiUrl } from '../../config/api';
 
 export const AuthPage: React.FC = () => {
-  const { login, register, guestLogin, verify2FA } = useAuth();
+  const { login, register, verify2FA } = useAuth();
 
   const [isRegister, setIsRegister] = useState(false);
   const [identifier, setIdentifier] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [guestName, setGuestName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -147,299 +146,220 @@ export const AuthPage: React.FC = () => {
     reader.readAsText(file);
   };
 
-  const handleQuickLogin = async (guestId?: string, customName?: string) => {
-    setError('');
-    setLoading(true);
-    const res = await guestLogin(guestId, customName);
-    if (!res.success) setError(res.error || 'Gagal masuk akun demo');
-    setLoading(false);
-  };
-
   return (
     <div className="min-h-screen w-full bg-[#0b0c10] flex items-center justify-center p-4 sm:p-6 py-8 md:py-12 relative overflow-y-auto select-none">
       {/* Ambient background aura */}
-      <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="fixed top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="fixed bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
 
-      <div className="w-full max-w-4xl my-auto grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 z-10">
-        {/* Main Card: Auth Form */}
-        <div className="md:col-span-7 bg-[#13161f]/90 backdrop-blur-xl rounded-3xl p-8 border border-white/10 shadow-2xl flex flex-col justify-between">
-          <div>
-            {/* Minimal Logo */}
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25">
-                <MessageSquare size={20} />
-              </div>
-              <div>
-                <h1 className="text-xl font-black tracking-tight text-white flex items-center space-x-2">
-                  <span>AeroCord</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
-                    Minimalist
-                  </span>
-                </h1>
-                <p className="text-xs text-slate-400">Next-Gen Realtime Voice & Chat Platform</p>
-              </div>
+      {/* Main Card: Auth Form */}
+      <div className="w-full max-w-md my-auto bg-[#13161f]/95 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl z-10 flex flex-col justify-between">
+        <div>
+          {/* Minimal Logo */}
+          <div className="flex items-center space-x-3 mb-6">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25">
+              <MessageSquare size={20} />
             </div>
-
-            <div className="mb-6">
-              <h2 className="text-xl font-bold text-white mb-1">
-                {isRegister ? 'Buat Akun Baru' : 'Selamat Datang Kembali'}
-              </h2>
-              <p className="text-xs text-slate-400">
-                {isRegister
-                  ? 'Daftar untuk menikmati obrolan aman & panggilan suara jernih.'
-                  : 'Masuk ke akun Anda untuk mulai berkomunikasi.'}
-              </p>
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-white flex items-center space-x-2">
+                <span>AeroCord</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
+                  Minimalist
+                </span>
+              </h1>
+              <p className="text-xs text-slate-400">Next-Gen Realtime Voice & Chat Platform</p>
             </div>
+          </div>
 
-            {/* Error Banner */}
-            {error && (
-              <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-start space-x-2 animate-in fade-in">
-                <ShieldAlert size={16} className="text-rose-400 flex-shrink-0 mt-0.5" />
-                <span>{error}</span>
-              </div>
-            )}
+          <div className="mb-6">
+            <h2 className="text-xl font-bold text-white mb-1">
+              {isRegister ? 'Buat Akun Baru' : 'Selamat Datang Kembali'}
+            </h2>
+            <p className="text-xs text-slate-400">
+              {isRegister
+                ? 'Daftar untuk menikmati obrolan aman & panggilan suara jernih.'
+                : 'Masuk ke akun Anda untuk mulai berkomunikasi.'}
+            </p>
+          </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {isRegister && (
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300">
-                      Nama Pengguna <span className="text-rose-400">*</span>
-                    </label>
-                    {isUsernameTaken === true && (
-                      <span className="text-[10px] text-rose-400 font-semibold flex items-center space-x-1">
-                        <X size={12} />
-                        <span>Username sudah digunakan</span>
-                      </span>
-                    )}
-                    {isUsernameTaken === false && username.trim().length >= 2 && (
-                      <span className="text-[10px] text-emerald-400 font-semibold flex items-center space-x-1">
-                        <Check size={12} />
-                        <span>Username tersedia</span>
-                      </span>
-                    )}
-                  </div>
-                  <div className="relative flex items-center">
-                    <span className="absolute left-3.5 text-slate-400"><User size={16} /></span>
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Display Name"
-                      required
-                      className={`w-full pl-10 pr-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border focus:outline-none transition-colors ${
-                        isUsernameTaken === true ? 'border-rose-500 focus:border-rose-500' : isUsernameTaken === false ? 'border-emerald-500 focus:border-emerald-500' : 'border-white/10 focus:border-indigo-500'
-                      }`}
-                    />
-                  </div>
-                </div>
-              )}
+          {/* Error Banner */}
+          {error && (
+            <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 flex items-start space-x-2 animate-in fade-in">
+              <ShieldAlert size={16} className="text-rose-400 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
 
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {isRegister && (
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300">
-                    {isRegister ? 'Alamat Email' : 'Email atau Username'} <span className="text-rose-400">*</span>
+                    Nama Pengguna <span className="text-rose-400">*</span>
                   </label>
-                  {isRegister && isEmailTaken === true && (
+                  {isUsernameTaken === true && (
                     <span className="text-[10px] text-rose-400 font-semibold flex items-center space-x-1">
                       <X size={12} />
-                      <span>Email sudah terdaftar</span>
+                      <span>Username sudah digunakan</span>
                     </span>
                   )}
-                  {isRegister && isEmailTaken === false && email.includes('@') && (
+                  {isUsernameTaken === false && username.trim().length >= 2 && (
                     <span className="text-[10px] text-emerald-400 font-semibold flex items-center space-x-1">
                       <Check size={12} />
-                      <span>Email tersedia</span>
+                      <span>Username tersedia</span>
                     </span>
                   )}
                 </div>
                 <div className="relative flex items-center">
-                  <span className="absolute left-3.5 text-slate-400"><Mail size={16} /></span>
+                  <span className="absolute left-3.5 text-slate-400"><User size={16} /></span>
                   <input
-                    type={isRegister ? 'email' : 'text'}
-                    value={isRegister ? email : identifier}
-                    onChange={(e) => isRegister ? setEmail(e.target.value) : setIdentifier(e.target.value)}
-                    placeholder={isRegister ? 'nama@domain.com' : 'alice@aerocord.app atau Alice'}
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Contoh: AeroMaster"
                     required
                     className={`w-full pl-10 pr-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border focus:outline-none transition-colors ${
-                      isRegister && isEmailTaken === true ? 'border-rose-500 focus:border-rose-500' : isRegister && isEmailTaken === false ? 'border-emerald-500 focus:border-emerald-500' : 'border-white/10 focus:border-indigo-500'
+                      isUsernameTaken === true ? 'border-rose-500 focus:border-rose-500' : isUsernameTaken === false ? 'border-emerald-500 focus:border-emerald-500' : 'border-white/10 focus:border-indigo-500'
                     }`}
                   />
                 </div>
               </div>
+            )}
 
-              <div>
-                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5">
-                  Kata Sandi <span className="text-rose-400">*</span>
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300">
+                  {isRegister ? 'Alamat Email' : 'Email atau Username'} <span className="text-rose-400">*</span>
                 </label>
-                <div className="relative flex items-center">
-                  <span className="absolute left-3.5 text-slate-400"><Lock size={16} /></span>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    required
-                    className="w-full pl-10 pr-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border border-white/10 focus:border-indigo-500 focus:outline-none transition-colors"
-                  />
-                </div>
+                {isRegister && isEmailTaken === true && (
+                  <span className="text-[10px] text-rose-400 font-semibold flex items-center space-x-1">
+                    <X size={12} />
+                    <span>Email sudah terdaftar</span>
+                  </span>
+                )}
+                {isRegister && isEmailTaken === false && email.includes('@') && (
+                  <span className="text-[10px] text-emerald-400 font-semibold flex items-center space-x-1">
+                    <Check size={12} />
+                    <span>Email tersedia</span>
+                  </span>
+                )}
+              </div>
+              <div className="relative flex items-center">
+                <span className="absolute left-3.5 text-slate-400"><Mail size={16} /></span>
+                <input
+                  type={isRegister ? 'email' : 'text'}
+                  value={isRegister ? email : identifier}
+                  onChange={(e) => isRegister ? setEmail(e.target.value) : setIdentifier(e.target.value)}
+                  placeholder={isRegister ? 'nama@domain.com' : 'Email atau Username'}
+                  required
+                  className={`w-full pl-10 pr-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border focus:outline-none transition-colors ${
+                    isRegister && isEmailTaken === true ? 'border-rose-500 focus:border-rose-500' : isRegister && isEmailTaken === false ? 'border-emerald-500 focus:border-emerald-500' : 'border-white/10 focus:border-indigo-500'
+                  }`}
+                />
+              </div>
+            </div>
 
-                {/* Password Strength Checklist (when registering) */}
-                {isRegister && password.length > 0 && (
-                  <div className="mt-3 p-3.5 rounded-2xl bg-[#0c0e14] border border-white/5 space-y-2 text-xs">
-                    {/* Strength Bar */}
-                    <div className="flex items-center justify-between text-[11px] mb-1">
-                      <span className="text-slate-400">Kekuatan Sandi:</span>
-                      <span className={`font-bold ${criteriaCount >= 5 ? 'text-emerald-400' : criteriaCount >= 3 ? 'text-amber-400' : 'text-rose-400'}`}>
-                        {strength.text}
-                      </span>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${strength.color} transition-all duration-300`}
-                        style={{ width: strength.width }}
-                      />
-                    </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                Kata Sandi <span className="text-rose-400">*</span>
+              </label>
+              <div className="relative flex items-center">
+                <span className="absolute left-3.5 text-slate-400"><Lock size={16} /></span>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border border-white/10 focus:border-indigo-500 focus:outline-none transition-colors"
+                />
+              </div>
 
-                    {/* Criteria items */}
-                    <div className="grid grid-cols-2 gap-1.5 pt-2 text-[11px]">
-                      <div className={`flex items-center space-x-1.5 ${hasMinLength ? 'text-emerald-400' : 'text-slate-500'}`}>
-                        {hasMinLength ? <Check size={13} /> : <X size={13} />}
-                        <span>Min. 8 Karakter</span>
-                      </div>
-                      <div className={`flex items-center space-x-1.5 ${hasUppercase ? 'text-emerald-400' : 'text-slate-500'}`}>
-                        {hasUppercase ? <Check size={13} /> : <X size={13} />}
-                        <span>Huruf Besar (A-Z)</span>
-                      </div>
-                      <div className={`flex items-center space-x-1.5 ${hasLowercase ? 'text-emerald-400' : 'text-slate-500'}`}>
-                        {hasLowercase ? <Check size={13} /> : <X size={13} />}
-                        <span>Huruf Kecil (a-z)</span>
-                      </div>
-                      <div className={`flex items-center space-x-1.5 ${hasNumber ? 'text-emerald-400' : 'text-slate-500'}`}>
-                        {hasNumber ? <Check size={13} /> : <X size={13} />}
-                        <span>Angka (0-9)</span>
-                      </div>
-                      <div className={`flex items-center space-x-1.5 col-span-2 ${hasSpecial ? 'text-emerald-400' : 'text-slate-500'}`}>
-                        {hasSpecial ? <Check size={13} /> : <X size={13} />}
-                        <span>Simbol Khusus (!@#$%^&*...)</span>
-                      </div>
+              {/* Password Requirements Checklist (Register Only) */}
+              {isRegister && (
+                <div className="mt-3 p-3.5 rounded-2xl bg-[#0c0e14] border border-white/5 space-y-2.5 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Kekuatan Sandi
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-300">
+                      {strength.text}
+                    </span>
+                  </div>
+                  {/* Progress Bar */}
+                  <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full ${strength.color} transition-all duration-300`}
+                      style={{ width: strength.width }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 text-[11px]">
+                    <div className={`flex items-center space-x-1.5 ${hasMinLength ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {hasMinLength ? <Check size={13} /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-500 ml-1 mr-0.5" />}
+                      <span>Min. 8 Karakter</span>
+                    </div>
+                    <div className={`flex items-center space-x-1.5 ${hasUppercase ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {hasUppercase ? <Check size={13} /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-500 ml-1 mr-0.5" />}
+                      <span>Huruf Besar (A-Z)</span>
+                    </div>
+                    <div className={`flex items-center space-x-1.5 ${hasLowercase ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {hasLowercase ? <Check size={13} /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-500 ml-1 mr-0.5" />}
+                      <span>Huruf Kecil (a-z)</span>
+                    </div>
+                    <div className={`flex items-center space-x-1.5 ${hasNumber ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {hasNumber ? <Check size={13} /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-500 ml-1 mr-0.5" />}
+                      <span>Angka (0-9)</span>
+                    </div>
+                    <div className={`flex items-center space-x-1.5 sm:col-span-2 ${hasSpecial ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {hasSpecial ? <Check size={13} /> : <div className="w-1.5 h-1.5 rounded-full bg-slate-500 ml-1 mr-0.5" />}
+                      <span>Simbol Khusus (!@#$%^&*)</span>
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
+            </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all cursor-pointer flex items-center justify-center space-x-2"
-              >
-                {loading ? (
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                ) : (
-                  <span>{isRegister ? 'Buat Akun Sekarang' : 'Masuk ke AeroCord'}</span>
-                )}
-              </button>
-            </form>
-          </div>
-
-          {/* Toggle Switch */}
-          <div className="mt-6 text-center text-xs text-slate-400">
-            {isRegister ? (
-              <span>
-                Sudah punya akun?{' '}
-                <button
-                  type="button"
-                  onClick={() => { setIsRegister(false); setError(''); }}
-                  className="text-indigo-400 hover:underline font-semibold cursor-pointer"
-                >
-                  Masuk di sini
-                </button>
-              </span>
-            ) : (
-              <span>
-                Belum memiliki akun?{' '}
-                <button
-                  type="button"
-                  onClick={() => { setIsRegister(true); setError(''); }}
-                  className="text-indigo-400 hover:underline font-semibold cursor-pointer"
-                >
-                  Daftar akun baru
-                </button>
-              </span>
-            )}
-          </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-all cursor-pointer flex items-center justify-center space-x-2"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <span>{isRegister ? 'Buat Akun Sekarang' : 'Masuk ke AeroCord'}</span>
+              )}
+            </button>
+          </form>
         </div>
 
-        {/* Right Card: Feature Showcase & Guest Access */}
-        <div className="md:col-span-5 bg-[#13161f]/90 backdrop-blur-xl rounded-3xl p-6 border border-white/10 shadow-2xl flex flex-col justify-between">
-          <div>
-            <div className="flex items-center space-x-2 text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-2">
-              <Sparkles size={14} />
-              <span>Modern & Aman</span>
-            </div>
-            <h3 className="text-lg font-bold text-white mb-1.5">Fitur Unggulan</h3>
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-              Platform komunikasi real-time dengan standar keamanan tingkat tinggi:
-            </p>
-
-            <div className="space-y-3">
-              <div className="p-3 bg-[#0c0e14] border border-white/5 rounded-2xl flex items-start space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 flex-shrink-0 mt-0.5">
-                  <ShieldCheck size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-white">Keamanan 4-Lapis</div>
-                  <div className="text-[11px] text-slate-400 leading-tight mt-0.5">Enkripsi AES-256-GCM, HMAC Integrity Seal, dan Sanitasi SQLi.</div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-[#0c0e14] border border-white/5 rounded-2xl flex items-start space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 flex-shrink-0 mt-0.5">
-                  <Gamepad2 size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-white">Voice & Video WebRTC</div>
-                  <div className="text-[11px] text-slate-400 leading-tight mt-0.5">Voice channel rendah latensi, screen sharing, dan panggilan langsung.</div>
-                </div>
-              </div>
-
-              <div className="p-3 bg-[#0c0e14] border border-white/5 rounded-2xl flex items-start space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 flex-shrink-0 mt-0.5">
-                  <Smartphone size={16} />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-white">Autentikasi 2FA</div>
-                  <div className="text-[11px] text-slate-400 leading-tight mt-0.5">Mendukung Google Authenticator (QR) dan File Kunci Keamanan.</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Guest Access Box */}
-          <div className="mt-4 pt-4 border-t border-white/5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-              Masuk Cepat Sebagai Tamu
-            </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="text"
-                placeholder="Ketik Nama Panggilan"
-                value={guestName}
-                onChange={(e) => setGuestName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && guestName.trim() && handleQuickLogin(undefined, guestName)}
-                className="flex-1 px-3.5 py-2.5 bg-[#0c0e14] text-xs text-slate-200 rounded-xl border border-white/10 focus:border-indigo-500 focus:outline-none"
-              />
+        {/* Toggle Switch */}
+        <div className="mt-6 text-center text-xs text-slate-400">
+          {isRegister ? (
+            <span>
+              Sudah punya akun?{' '}
               <button
-                onClick={() => handleQuickLogin(undefined, guestName)}
-                disabled={!guestName.trim() || loading}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all cursor-pointer shadow-lg shadow-indigo-600/20 whitespace-nowrap"
+                type="button"
+                onClick={() => { setIsRegister(false); setError(''); }}
+                className="text-indigo-400 hover:underline font-semibold cursor-pointer"
               >
-                Masuk Tamu
+                Masuk di sini
               </button>
-            </div>
-          </div>
+            </span>
+          ) : (
+            <span>
+              Belum memiliki akun?{' '}
+              <button
+                type="button"
+                onClick={() => { setIsRegister(true); setError(''); }}
+                className="text-indigo-400 hover:underline font-semibold cursor-pointer"
+              >
+                Daftar akun baru
+              </button>
+            </span>
+          )}
         </div>
       </div>
 
