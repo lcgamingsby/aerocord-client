@@ -11,6 +11,8 @@ interface DirectMessagesViewProps {
   onSelectConversation: (convo: DirectMessageConversation | null) => void;
   onOpenSettings: () => void;
   onCreateDMWithUser: (targetUserId: string) => void;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
@@ -19,7 +21,9 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
   unreadDMs = {},
   onSelectConversation,
   onOpenSettings,
-  onCreateDMWithUser
+  onCreateDMWithUser,
+  isSidebarCollapsed = false,
+  onToggleSidebar
 }) => {
   return (
     <div className="flex-1 flex h-full select-none overflow-hidden bg-[#0d0f14]">
@@ -31,6 +35,8 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
         onSelectFriendsHub={() => onSelectConversation(null)}
         onSelectConversation={onSelectConversation}
         onOpenSettings={onOpenSettings}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={onToggleSidebar}
       />
 
       {/* 2. Main Right Area: Friends Hub or Chat Area */}
@@ -42,9 +48,15 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
           showMembers={false}
           onStartDM={onCreateDMWithUser}
           onBackToFriends={() => onSelectConversation(null)}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={onToggleSidebar}
         />
       ) : (
-        <FriendsHubView onStartDMWithUser={onCreateDMWithUser} />
+        <FriendsHubView 
+          onStartDMWithUser={onCreateDMWithUser} 
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={onToggleSidebar}
+        />
       )}
     </div>
   );

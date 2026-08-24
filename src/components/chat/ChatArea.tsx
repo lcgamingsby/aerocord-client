@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
-import { Hash, Volume2, Phone, Video, Users, AtSign, Sparkles, Pin, Search, ArrowLeft, X, Music } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Hash, Volume2, Phone, Video, Users, AtSign, Sparkles, Pin, Search, ArrowLeft, X, Music, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Message, Channel, User, DirectMessageConversation } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
@@ -19,6 +19,8 @@ interface ChatAreaProps {
   showMembers: boolean;
   onStartDM?: (userId: string) => void;
   onBackToFriends?: () => void;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -27,7 +29,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onToggleMembers,
   showMembers,
   onStartDM,
-  onBackToFriends
+  onBackToFriends,
+  isSidebarCollapsed = false,
+  onToggleSidebar
 }) => {
   const { user } = useAuth();
   const { socket, typingUsers, sendMessage, editMessage, deleteMessage, addReaction, startTyping, stopTyping } = useSocket();
@@ -145,14 +149,29 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0d0f14] overflow-hidden select-text relative">
       {/* Top Clean Minimal Header */}
-      <div className="h-14 px-6 border-b border-white/5 flex items-center justify-between bg-[#11131a]/80 backdrop-blur-md z-20 flex-shrink-0">
-        <div className="flex items-center space-x-3 min-w-0">
+      <div className="h-14 px-4 sm:px-6 border-b border-white/5 flex items-center justify-between bg-[#11131a]/80 backdrop-blur-md z-20 flex-shrink-0">
+        <div className="flex items-center space-x-2.5 min-w-0">
+          {/* Sidebar Toggle (Collapse / Expand) */}
+          {onToggleSidebar && (
+            <button
+              onClick={onToggleSidebar}
+              title={isSidebarCollapsed ? "Buka Sidebar (Ctrl+B)" : "Tutup Sidebar (Ctrl+B)"}
+              className={`p-1.5 rounded-xl transition-all cursor-pointer mr-0.5 ${
+                isSidebarCollapsed 
+                  ? 'bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 shadow-sm' 
+                  : 'bg-white/[0.04] text-slate-400 hover:text-white hover:bg-white/10'
+              }`}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+          )}
+
           {/* Back button when in DM mode */}
           {conversation && onBackToFriends && (
             <button
               onClick={onBackToFriends}
               title="Kembali ke Friends Hub"
-              className="p-1.5 rounded-xl bg-white/[0.04] hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer mr-1"
+              className="p-1.5 rounded-xl bg-white/[0.04] hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer mr-0.5"
             >
               <ArrowLeft size={16} />
             </button>

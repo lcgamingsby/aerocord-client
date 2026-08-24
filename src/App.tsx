@@ -38,6 +38,36 @@ const MainLayout: React.FC = () => {
   const [unreadDMs, setUnreadDMs] = useState<{ [convoId: string]: number }>({});
 
   const [showMembers, setShowMembers] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('aerocord_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem('aerocord_sidebar_collapsed', String(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  // Global keyboard shortcut: Ctrl+B or Cmd+B to toggle sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        // Prevent toggle if currently typing inside an input/textarea
+        const activeTag = document.activeElement?.tagName.toLowerCase();
+        if (activeTag === 'input' || activeTag === 'textarea') return;
+        e.preventDefault();
+        toggleSidebar();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleSidebar]);
 
   // Auto-close member sidebar when window width narrows/shrinks (< 1024px)
   useEffect(() => {
@@ -235,6 +265,8 @@ const MainLayout: React.FC = () => {
           onSelectConversation={handleSelectConversation}
           onOpenSettings={() => setIsUserSettingsOpen(true)}
           onCreateDMWithUser={handleCreateDMWithUser}
+          isSidebarCollapsed={isSidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
         />
       ) : activeServer ? (
         // Server Mode
@@ -255,6 +287,8 @@ const MainLayout: React.FC = () => {
               setActiveServer(updated);
               setServers(prev => prev.map(s => s.id === updated.id ? updated : s));
             }}
+            isCollapsed={isSidebarCollapsed}
+            onToggleCollapse={toggleSidebar}
           />
 
           {/* Chat or Voice Room */}
@@ -267,6 +301,8 @@ const MainLayout: React.FC = () => {
               onToggleMembers={() => setShowMembers(!showMembers)}
               showMembers={showMembers}
               onStartDM={handleCreateDMWithUser}
+              isSidebarCollapsed={isSidebarCollapsed}
+              onToggleSidebar={toggleSidebar}
             />
           )}
 

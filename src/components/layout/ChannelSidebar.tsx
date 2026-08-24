@@ -1,10 +1,10 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Server, Channel, Message } from '../../types';
 import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
-import { Hash, Volume2, Plus, ChevronDown, ChevronRight, Settings, UserPlus, MicOff, Radio, BellOff, FolderPlus } from 'lucide-react';
+import { Hash, Volume2, Plus, ChevronDown, ChevronRight, Settings, UserPlus, MicOff, Radio, BellOff, FolderPlus, PanelLeftClose } from 'lucide-react';
 import { UserDock } from './UserDock';
 import { ActiveVoiceDock } from './ActiveVoiceDock';
 import { ChannelContextMenu } from '../chat/ChannelContextMenu';
@@ -20,6 +20,8 @@ interface ChannelSidebarProps {
   onOpenSettings: () => void;
   onOpenUserSettings?: () => void;
   onServerUpdated?: (server: Server) => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
@@ -29,7 +31,9 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onOpenCreateChannel,
   onOpenSettings,
   onOpenUserSettings,
-  onServerUpdated
+  onServerUpdated,
+  isCollapsed = false,
+  onToggleCollapse
 }) => {
   const { user } = useAuth();
   const { socket } = useSocket();
@@ -220,12 +224,16 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   };
 
   return (
-    <div className="w-64 bg-[#11131a] flex flex-col h-full select-none z-20 flex-shrink-0 border-r border-white/5 relative">
+    <div className={`bg-[#11131a] flex flex-col h-full select-none z-20 flex-shrink-0 border-r border-white/5 relative transition-all duration-300 ease-in-out ${
+      isCollapsed
+        ? 'w-0 min-w-0 max-w-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden border-none'
+        : 'w-60 min-w-[240px] opacity-100 translate-x-0'
+    }`}>
       {/* Server Header Dropdown */}
-      <div className="relative">
+      <div className="relative flex items-center h-14 px-3 border-b border-white/5">
         <button
           onClick={() => setShowServerMenu(!showServerMenu)}
-          className="h-14 w-full px-4 border-b border-white/5 flex items-center justify-between font-bold text-sm text-slate-100 hover:bg-white/[0.03] transition-colors cursor-pointer"
+          className="flex-1 min-w-0 h-full flex items-center justify-between font-bold text-sm text-slate-100 hover:bg-white/[0.03] rounded-xl px-2 transition-colors cursor-pointer"
         >
           <div className="flex items-center space-x-2.5 truncate">
             {server.icon ? (
@@ -237,15 +245,30 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
             )}
             <span className="truncate font-black tracking-tight">{server.name}</span>
           </div>
-          <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${showServerMenu ? 'rotate-180' : ''}`} />
+          <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ml-1.5 flex-shrink-0 ${showServerMenu ? 'rotate-180' : ''}`} />
         </button>
 
-        {/* Server Dropdown Menu */}
-        {showServerMenu && (
-          <div
-            className="absolute top-14 left-2 right-2 bg-[#181b24] border border-white/10 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-100"
-            onMouseLeave={() => setShowServerMenu(false)}
+        {/* Minimalist Collapse Sidebar Button */}
+        {onToggleCollapse && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse();
+            }}
+            title="Tutup Sidebar (Ctrl+B)"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer ml-1 flex-shrink-0"
           >
+            <PanelLeftClose size={16} />
+          </button>
+        )}
+      </div>
+
+      {/* Server Dropdown Menu */}
+      {showServerMenu && (
+        <div
+          className="absolute top-14 left-2 right-2 bg-[#181b24] border border-white/10 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-100"
+          onMouseLeave={() => setShowServerMenu(false)}
+        >
             <button
               onClick={copyInviteCode}
               className="w-full px-3 py-2.5 flex items-center justify-between text-xs text-indigo-400 font-semibold hover:bg-indigo-600 hover:text-white rounded-xl transition-colors cursor-pointer"
@@ -286,7 +309,6 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
             </button>
           </div>
         )}
-      </div>
 
       {/* Channel Categories & Groups */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">

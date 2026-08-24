@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { DirectMessageConversation, Message } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
-import { Users, GripVertical } from 'lucide-react';
+import { Users, GripVertical, PanelLeftClose } from 'lucide-react';
 import { UserDock } from '../layout/UserDock';
 import { ActiveVoiceDock } from '../layout/ActiveVoiceDock';
 
@@ -13,6 +13,8 @@ interface DMSidebarProps {
   onSelectFriendsHub: () => void;
   onSelectConversation: (convo: DirectMessageConversation) => void;
   onOpenSettings: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 export const DMSidebar: React.FC<DMSidebarProps> = ({
@@ -21,7 +23,9 @@ export const DMSidebar: React.FC<DMSidebarProps> = ({
   unreadDMs = {},
   onSelectFriendsHub,
   onSelectConversation,
-  onOpenSettings
+  onOpenSettings,
+  isCollapsed = false,
+  onToggleCollapse
 }) => {
   const { user, friends } = useAuth();
   const pendingCount = friends.filter(f => f.status === 'pending' && !f.isSender).length;
@@ -65,29 +69,45 @@ export const DMSidebar: React.FC<DMSidebarProps> = ({
   return (
     <div
       ref={sidebarRef}
-      style={{ width: `${sidebarWidth}px` }}
-      className="bg-[#11131a] flex flex-col h-full border-r border-white/5 flex-shrink-0 select-none relative group/sidebar"
+      style={{ width: isCollapsed ? 0 : `${sidebarWidth}px` }}
+      className={`bg-[#11131a] flex flex-col h-full border-r border-white/5 flex-shrink-0 select-none relative group/sidebar transition-all duration-300 ease-in-out ${
+        isCollapsed ? 'min-w-0 max-w-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden border-none' : 'opacity-100 translate-x-0'
+      }`}
     >
-      {/* Friends Hub Button */}
-      <div className="p-3.5 border-b border-white/5">
+      {/* Friends Hub Button Header */}
+      <div className="p-3 border-b border-white/5 flex items-center space-x-1.5">
         <button
           onClick={onSelectFriendsHub}
-          className={`w-full px-3.5 py-2.5 rounded-2xl flex items-center justify-between font-bold text-xs transition-all cursor-pointer ${
+          className={`flex-1 px-3 py-2 rounded-2xl flex items-center justify-between font-bold text-xs transition-all cursor-pointer ${
             activeConversationId === null
-              ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-lg shadow-indigo-600/25'
-              : 'bg-white/[0.04] text-slate-300 hover:bg-white/[0.08] hover:text-white'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25'
+              : 'text-slate-300 hover:bg-white/5 hover:text-white'
           }`}
         >
-          <div className="flex items-center space-x-3">
-            <Users size={18} className={activeConversationId === null ? 'text-white' : 'text-indigo-400'} />
-            <span>Friends Hub</span>
+          <div className="flex items-center space-x-2.5">
+            <Users size={16} />
+            <span>Friends</span>
           </div>
           {pendingCount > 0 && (
-            <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white text-[10px] font-black shadow animate-pulse">
+            <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[9px] font-bold rounded-full">
               {pendingCount}
             </span>
           )}
         </button>
+
+        {/* Minimalist Collapse Sidebar Button */}
+        {onToggleCollapse && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCollapse();
+            }}
+            title="Tutup Sidebar (Ctrl+B)"
+            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer flex-shrink-0"
+          >
+            <PanelLeftClose size={16} />
+          </button>
+        )}
       </div>
 
       {/* Direct Messages List */}
