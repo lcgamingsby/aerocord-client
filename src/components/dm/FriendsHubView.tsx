@@ -70,18 +70,14 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({
       {/* Top Tab Navigation Bar */}
       <div className="h-14 px-4 sm:px-6 border-b border-white/5 flex items-center space-x-4 sm:space-x-6 bg-[#11131a]/80 backdrop-blur-md flex-shrink-0">
         <div className="flex items-center space-x-2.5 text-white font-black text-sm">
-          {/* Sidebar Toggle (Collapse / Expand) */}
-          {onToggleSidebar && (
+          {/* Sidebar Open Button (Only visible when sidebar is collapsed) */}
+          {onToggleSidebar && isSidebarCollapsed && (
             <button
               onClick={onToggleSidebar}
-              title={isSidebarCollapsed ? "Buka Sidebar (Ctrl+B)" : "Tutup Sidebar (Ctrl+B)"}
-              className={`p-1.5 rounded-xl transition-all cursor-pointer mr-0.5 ${
-                isSidebarCollapsed 
-                  ? 'bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 shadow-sm' 
-                  : 'bg-white/[0.04] text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
+              title="Buka Sidebar (Ctrl+B)"
+              className="p-1.5 rounded-xl transition-all cursor-pointer mr-0.5 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 shadow-sm"
             >
-              {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              <PanelLeftOpen size={16} />
             </button>
           )}
           <Users size={18} className="text-indigo-400" />

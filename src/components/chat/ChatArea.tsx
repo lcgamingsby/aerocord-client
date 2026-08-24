@@ -151,18 +151,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       {/* Top Clean Minimal Header */}
       <div className="h-14 px-4 sm:px-6 border-b border-white/5 flex items-center justify-between bg-[#11131a]/80 backdrop-blur-md z-20 flex-shrink-0">
         <div className="flex items-center space-x-2.5 min-w-0">
-          {/* Sidebar Toggle (Collapse / Expand) */}
-          {onToggleSidebar && (
+          {/* Sidebar Open Button (Only visible when sidebar is collapsed) */}
+          {onToggleSidebar && isSidebarCollapsed && (
             <button
               onClick={onToggleSidebar}
-              title={isSidebarCollapsed ? "Buka Sidebar (Ctrl+B)" : "Tutup Sidebar (Ctrl+B)"}
-              className={`p-1.5 rounded-xl transition-all cursor-pointer mr-0.5 ${
-                isSidebarCollapsed 
-                  ? 'bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 shadow-sm' 
-                  : 'bg-white/[0.04] text-slate-400 hover:text-white hover:bg-white/10'
-              }`}
+              title="Buka Sidebar (Ctrl+B)"
+              className="p-1.5 rounded-xl transition-all cursor-pointer mr-0.5 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 shadow-sm"
             >
-              {isSidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              <PanelLeftOpen size={16} />
             </button>
           )}
 
