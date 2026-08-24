@@ -147,22 +147,20 @@ export const AuthPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#0b0c10] flex flex-col items-center p-4 sm:p-6 py-8 md:py-12 relative overflow-y-auto select-none">
+    <div className="fixed inset-0 w-full h-full overflow-y-auto bg-[#0b0c10] select-none z-40">
       {/* Ambient background aura */}
       <div className="fixed top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="fixed bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none" />
 
-      {/* Spacer to vertically center when content is shorter than viewport */}
-      <div className="flex-1" />
-
-      {/* Main Card: Auth Form */}
-      <div className="w-full max-w-md bg-[#13161f]/95 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl z-10 flex flex-col justify-between">
-        <div>
-          {/* Minimal Logo */}
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25">
-              <MessageSquare size={20} />
-            </div>
+      <div className="min-h-full w-full flex flex-col items-center justify-center p-4 sm:p-6 py-12">
+        {/* Main Card: Auth Form */}
+        <div className="w-full max-w-md my-auto bg-[#13161f]/95 backdrop-blur-xl rounded-3xl p-6 sm:p-8 border border-white/10 shadow-2xl z-10 flex flex-col justify-between">
+          <div>
+            {/* Minimal Logo */}
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white shadow-lg shadow-indigo-500/25">
+                <MessageSquare size={20} />
+              </div>
             <div>
               <h1 className="text-xl font-black tracking-tight text-white flex items-center space-x-2">
                 <span>AeroCord</span>
@@ -365,9 +363,7 @@ export const AuthPage: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Bottom Spacer for smooth scrolling */}
-      <div className="flex-1 min-h-6" />
+    </div>
 
       {/* Two-Factor Authentication (2FA) Modal */}
       {twoFactorChallenge && (
