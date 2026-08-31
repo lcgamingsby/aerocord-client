@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider, useSocket } from './context/SocketContext';
 import { VoiceProvider, useVoice } from './context/VoiceContext';
@@ -297,6 +298,7 @@ const MainLayout: React.FC = () => {
           ) : (
             <ChatArea
               channel={activeChannel}
+              server={activeServer}
               conversation={null}
               onToggleMembers={() => setShowMembers(!showMembers)}
               showMembers={showMembers}
@@ -406,15 +408,17 @@ const MainLayout: React.FC = () => {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <SocketProvider>
-          <VoiceProvider>
-            <AppContent />
-          </VoiceProvider>
-        </SocketProvider>
-      </AuthProvider>
-    </ToastProvider>
+    <ThemeProvider>
+      <ToastProvider>
+        <AuthProvider>
+          <SocketProvider>
+            <VoiceProvider>
+              <AppContent />
+            </VoiceProvider>
+          </SocketProvider>
+        </AuthProvider>
+      </ToastProvider>
+    </ThemeProvider>
   );
 }
 

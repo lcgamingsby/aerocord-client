@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Hash, Volume2, Phone, Video, Users, AtSign, Sparkles, Pin, Search, ArrowLeft, X, Music, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import { Message, Channel, User, DirectMessageConversation } from '../../types';
+import { Message, Channel, User, DirectMessageConversation, Server } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 import { useVoice } from '../../context/VoiceContext';
@@ -14,6 +14,7 @@ import { apiUrl } from '../../config/api';
 
 interface ChatAreaProps {
   channel: Channel | null;
+  server?: Server | null;
   conversation?: DirectMessageConversation | null;
   onToggleMembers: () => void;
   showMembers: boolean;
@@ -25,6 +26,7 @@ interface ChatAreaProps {
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   channel,
+  server,
   conversation,
   onToggleMembers,
   showMembers,
@@ -108,16 +110,27 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       }));
     };
 
+    const handlePollUpdated = (data: { messageId: string; poll: any }) => {
+      setMessages(prev => prev.map(m => {
+        if (m.id === data.messageId) {
+          return { ...m, poll: data.poll };
+        }
+        return m;
+      }));
+    };
+
     socket.on('new_message', handleNewMessage);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
     socket.on('reaction_updated', handleReactionUpdated);
+    socket.on('poll_updated', handlePollUpdated);
 
     return () => {
       socket.off('new_message', handleNewMessage);
       socket.off('message_updated', handleMessageUpdated);
       socket.off('message_deleted', handleMessageDeleted);
       socket.off('reaction_updated', handleReactionUpdated);
+      socket.off('poll_updated', handlePollUpdated);
     };
   }, [socket, activeId]);
 
@@ -376,19 +389,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           )}
 
           {/* Message List */}
-          {filteredMessages.map((msg) => (
-            <MessageItem
-              key={msg.id}
-              message={msg}
-              currentUser={user}
-              onReply={(m) => setReplyingTo(m)}
-              onEdit={(mId, content) => editMessage(mId, content)}
-              onDelete={(mId) => deleteMessage(mId)}
-              onAddReaction={(mId, emoji) => addReaction(mId, emoji)}
-              onOpenImage={(url) => setLightboxImage(url)}
-              onViewProfile={(authorUser) => setInspectUser(authorUser)}
-            />
-          ))}
+          {filteredMessages.map((msg) => {
+            const authorMember = server?.members?.find(m => m.userId === msg.authorId);
+            return (
+              <MessageItem
+                key={msg.id}
+                message={msg}
+                currentUser={user}
+                roles={server?.roles || []}
+                userRoleIds={authorMember?.roleIds || []}
+                onReply={(m) => setReplyingTo(m)}
+                onEdit={(mId, content) => editMessage(mId, content)}
+                onDelete={(mId) => deleteMessage(mId)}
+                onAddReaction={(mId, emoji) => addReaction(mId, emoji)}
+                onOpenImage={(url) => setLightboxImage(url)}
+                onViewProfile={(authorUser) => setInspectUser(authorUser)}
+              />
+            );
+          })}
 
           <div ref={messagesEndRef} />
         </div>
@@ -414,9 +432,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         isDM={!!conversation}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
-        onSendMessage={(content, attachments, stickerUrl, replyToId) => {
+        onSendMessage={(content, attachments, stickerUrl, replyToId, poll) => {
           if (activeId) {
-            sendMessage(activeId, content, attachments, stickerUrl, replyToId);
+            sendMessage(activeId, content, attachments, stickerUrl, replyToId, poll);
           }
         }}
         onTyping={() => {

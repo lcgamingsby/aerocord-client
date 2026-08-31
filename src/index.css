@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @layer base {
-  :root {
+  :root, [data-theme="midnight"] {
     --bg-main: #0b0c10;
     --bg-surface: #11131a;
     --bg-card: #13161f;
@@ -12,6 +12,58 @@
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
+  }
+
+  [data-theme="oled"] {
+    --bg-main: #000000;
+    --bg-surface: #0a0a0a;
+    --bg-card: #121212;
+    --bg-elevated: #1a1a1a;
+    --brand-primary: #ffffff;
+    --brand-cyan: #38bdf8;
+    --brand-emerald: #34d399;
+    --text-primary: #ffffff;
+    --text-secondary: #a3a3a3;
+    --text-muted: #737373;
+  }
+
+  [data-theme="cyberpunk"] {
+    --bg-main: #0d0614;
+    --bg-surface: #150a21;
+    --bg-card: #1d0e2e;
+    --bg-elevated: #28133f;
+    --brand-primary: #d946ef;
+    --brand-cyan: #06b6d4;
+    --brand-emerald: #10b981;
+    --text-primary: #fdf4ff;
+    --text-secondary: #d8b4fe;
+    --text-muted: #a855f7;
+  }
+
+  [data-theme="emerald"] {
+    --bg-main: #06110d;
+    --bg-surface: #0a1b15;
+    --bg-card: #0f261e;
+    --bg-elevated: #16362b;
+    --brand-primary: #10b981;
+    --brand-cyan: #14b8a6;
+    --brand-emerald: #059669;
+    --text-primary: #f0fdf4;
+    --text-secondary: #a7f3d0;
+    --text-muted: #6ee7b7;
+  }
+
+  [data-theme="sunset"] {
+    --bg-main: #140a08;
+    --bg-surface: #1f100d;
+    --bg-card: #2c1612;
+    --bg-elevated: #3a1e19;
+    --brand-primary: #f59e0b;
+    --brand-cyan: #fb923c;
+    --brand-emerald: #10b981;
+    --text-primary: #fffbeb;
+    --text-secondary: #fde68a;
+    --text-muted: #fbbf24;
   }
 
   html, body, #root {

@@ -1,8 +1,9 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
-import { PlusCircle, Smile, Sparkles, X, Image as ImageIcon, Send, Loader2, File, FileText, Film, Music, FileArchive, Paperclip, ShieldAlert } from 'lucide-react';
-import { Message } from '../../types';
+import React, { useState, useRef, useEffect } from 'react';
+import { PlusCircle, Smile, Sparkles, X, Image as ImageIcon, Send, Loader2, File as FileIcon, FileText, Film, Music, FileArchive, Paperclip, ShieldAlert, Mic, MicOff, Square, BarChart2 } from 'lucide-react';
+import { Message, Poll } from '../../types';
 import { EmojiPicker } from './EmojiPicker';
 import { StickerPicker } from './StickerPicker';
+import { CreatePollModal } from '../modals/CreatePollModal';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { apiUrl } from '../../config/api';
@@ -12,7 +13,7 @@ interface MessageInputProps {
   isDM?: boolean;
   replyingTo: Message | null;
   onCancelReply: () => void;
-  onSendMessage: (content: string, attachments?: any[], stickerUrl?: string, replyToId?: string) => void;
+  onSendMessage: (content: string, attachments?: any[], stickerUrl?: string, replyToId?: string, poll?: Poll) => void;
   onTyping: () => void;
   onStopTyping: () => void;
 }
@@ -27,18 +28,120 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   onStopTyping
 }) => {
   const { user } = useAuth();
-  const { showError, showInfo } = useToast();
+  const { showError, showInfo, showSuccess } = useToast();
   const [content, setContent] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const [showPollModal, setShowPollModal] = useState(false);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Voice Note Recording States
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
 
   const isGuestUser = user?.isGuest || user?.id.startsWith('guest_') || user?.email.endsWith('@guest.aerocord.app');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   const stickerRef = useRef<HTMLDivElement>(null);
+
+  // Voice Note Recorder Handlers
+  const startVoiceRecording = async () => {
+    if (isGuestUser) {
+      showError('Batasan Akun Tamu', 'Akun tamu tidak dapat mengirim pesan suara.');
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.start(200);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(prev => prev + 1);
+      }, 1000);
+    } catch (err: any) {
+      showError('Gagal Akses Mikrofon', 'Pastikan izin mikrofon telah diberikan di browser Anda.');
+    }
+  };
+
+  const cancelVoiceRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      mediaRecorderRef.current.stop();
+    }
+    clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    audioChunksRef.current = [];
+  };
+
+  const finishVoiceRecording = async () => {
+    if (!mediaRecorderRef.current || !isRecording) return;
+
+    clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
+
+    mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+    mediaRecorderRef.current.stop();
+
+    setIsUploading(true);
+
+    setTimeout(async () => {
+      try {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioFile = new File([audioBlob], `Voice_Note_${Date.now()}.webm`, { type: 'audio/webm' });
+
+        const formData = new FormData();
+        formData.append('file', audioFile);
+
+        const token = localStorage.getItem('aerocord_token');
+        const res = await fetch(apiUrl('/api/media/upload'), {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Gagal mengunggah pesan suara.');
+        }
+
+        const data = await res.json();
+        if (data.attachment) {
+          onSendMessage('', [data.attachment], undefined, replyingTo?.id);
+          onCancelReply();
+        }
+      } catch (err: any) {
+        showError('Gagal Mengirim Pesan Suara', err.message);
+      } finally {
+        setIsUploading(false);
+        setRecordingSeconds(0);
+        audioChunksRef.current = [];
+      }
+    }, 300);
+  };
+
+  const formatRecordTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
 
   // Close popovers on outside click
   useEffect(() => {
@@ -153,7 +256,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     if (['pdf', 'doc', 'docx', 'txt', 'md'].includes(ext)) {
       return <FileText size={20} className="text-cyan-400" />;
     }
-    return <File size={20} className="text-slate-400" />;
+    return <FileIcon size={20} className="text-slate-400" />;
   };
 
   const formatFileSize = (bytes?: number) => {
@@ -219,111 +322,183 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       <div className={`relative flex items-center bg-[#13161f] border border-white/10 px-3.5 py-2.5 shadow-xl transition-all ${
         replyingTo || attachments.length > 0 ? 'rounded-b-2xl' : 'rounded-2xl'
       }`}>
-        {/* Upload Button */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileUpload}
-          className="hidden"
-        />
-        <button
-          onClick={handleUploadClick}
-          disabled={isUploading}
-          title={isGuestUser ? 'Akun tamu tidak dapat mengirim lampiran (Tingkatkan akun)' : 'Kirim File / Gambar (Maks 15 MB)'}
-          className={`p-1.5 rounded-xl transition-colors mr-2 cursor-pointer flex-shrink-0 ${
-            isGuestUser
-              ? 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'
-              : 'text-slate-400 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          {isUploading ? (
-            <Loader2 size={20} className="animate-spin text-indigo-400" />
-          ) : isGuestUser ? (
-            <ShieldAlert size={20} className="text-amber-400" />
-          ) : (
-            <Paperclip size={20} />
-          )}
-        </button>
+        {isRecording ? (
+          /* Live Voice Recording UI Bar */
+          <div className="flex-1 flex items-center justify-between animate-in fade-in duration-150">
+            <div className="flex items-center space-x-3">
+              <div className="w-3 h-3 rounded-full bg-rose-500 animate-pulse shadow-md shadow-rose-500/50" />
+              <div className="text-xs font-mono font-bold text-rose-400">
+                {formatRecordTime(recordingSeconds)}
+              </div>
+              <span className="text-xs text-slate-300 font-medium hidden sm:inline">
+                Merekam Pesan Suara...
+              </span>
+            </div>
 
-        {/* Textarea */}
-        <textarea
-          value={content}
-          onChange={(e) => {
-            setContent(e.target.value);
-            onTyping();
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder={isDM ? `Message @${channelName}` : `Message #${channelName}`}
-          rows={1}
-          className="flex-1 bg-transparent text-gray-100 placeholder-gray-500 text-sm focus:outline-none resize-none max-h-32 min-h-[22px] py-0.5 leading-relaxed"
-        />
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={cancelVoiceRecording}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 text-xs font-bold transition-all cursor-pointer flex items-center space-x-1"
+                title="Batalkan Rekaman"
+              >
+                <X size={14} />
+                <span>Batal</span>
+              </button>
 
-        {/* Action Buttons (Sticker, Emoji, Send) */}
-        <div className="flex items-center space-x-1.5 ml-2">
-          {/* Sticker Button */}
-          <div ref={stickerRef} className="relative">
+              <button
+                type="button"
+                onClick={finishVoiceRecording}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white text-xs font-bold shadow-lg shadow-indigo-600/25 transition-all cursor-pointer flex items-center space-x-1.5"
+                title="Kirim Pesan Suara"
+              >
+                <Send size={13} />
+                <span>Kirim</span>
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Standard Input Bar */
+          <>
+            {/* Upload Button */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
             <button
-              onClick={() => {
-                setShowStickerPicker(!showStickerPicker);
-                setShowEmojiPicker(false);
-              }}
-              title="Send a Sticker"
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                showStickerPicker ? 'text-[#5865f2] bg-[#313338]' : 'text-gray-400 hover:text-gray-200 hover:bg-[#313338]'
+              onClick={handleUploadClick}
+              disabled={isUploading}
+              title={isGuestUser ? 'Akun tamu tidak dapat mengirim lampiran (Tingkatkan akun)' : 'Kirim File / Gambar (Maks 15 MB)'}
+              className={`p-1.5 rounded-xl transition-colors mr-1 cursor-pointer flex-shrink-0 ${
+                isGuestUser
+                  ? 'text-slate-500 hover:text-amber-400 hover:bg-amber-500/10'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Sparkles size={20} />
+              {isUploading ? (
+                <Loader2 size={19} className="animate-spin text-indigo-400" />
+              ) : isGuestUser ? (
+                <ShieldAlert size={19} className="text-amber-400" />
+              ) : (
+                <Paperclip size={19} />
+              )}
             </button>
-            {showStickerPicker && (
-              <div className="absolute right-0 bottom-12 z-50">
-                <StickerPicker
-                  onSelectSticker={(url) => {
-                    onSendMessage('', [], url, replyingTo?.id);
-                    setShowStickerPicker(false);
-                    onCancelReply();
+
+            {/* Create Poll Launcher Button */}
+            <button
+              type="button"
+              onClick={() => setShowPollModal(true)}
+              title="Buat Polling"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors mr-2 cursor-pointer flex-shrink-0"
+            >
+              <BarChart2 size={19} />
+            </button>
+
+            {/* Textarea */}
+            <textarea
+              value={content}
+              onChange={(e) => {
+                setContent(e.target.value);
+                onTyping();
+              }}
+              onKeyDown={handleKeyDown}
+              placeholder={isDM ? `Message @${channelName}` : `Message #${channelName}`}
+              rows={1}
+              className="flex-1 bg-transparent text-gray-100 placeholder-gray-500 text-sm focus:outline-none resize-none max-h-32 min-h-[22px] py-0.5 leading-relaxed"
+            />
+
+            {/* Action Buttons (Sticker, Emoji, Voice Mic, Send) */}
+            <div className="flex items-center space-x-1.5 ml-2">
+              {/* Sticker Button */}
+              <div ref={stickerRef} className="relative">
+                <button
+                  onClick={() => {
+                    setShowStickerPicker(!showStickerPicker);
+                    setShowEmojiPicker(false);
                   }}
-                  onClose={() => setShowStickerPicker(false)}
-                />
+                  title="Send a Sticker"
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                    showStickerPicker ? 'text-[#5865f2] bg-[#313338]' : 'text-gray-400 hover:text-gray-200 hover:bg-[#313338]'
+                  }`}
+                >
+                  <Sparkles size={19} />
+                </button>
+                {showStickerPicker && (
+                  <div className="absolute right-0 bottom-12 z-50">
+                    <StickerPicker
+                      onSelectSticker={(url) => {
+                        onSendMessage('', [], url, replyingTo?.id);
+                        setShowStickerPicker(false);
+                        onCancelReply();
+                      }}
+                      onClose={() => setShowStickerPicker(false)}
+                    />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Emoji Button */}
-          <div ref={emojiRef} className="relative">
-            <button
-              onClick={() => {
-                setShowEmojiPicker(!showEmojiPicker);
-                setShowStickerPicker(false);
-              }}
-              title="Add Emoji"
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                showEmojiPicker ? 'text-[#f0b232] bg-[#313338]' : 'text-gray-400 hover:text-[#f0b232] hover:bg-[#313338]'
-              }`}
-            >
-              <Smile size={20} />
-            </button>
-            {showEmojiPicker && (
-              <div className="absolute right-0 bottom-12 z-50">
-                <EmojiPicker
-                  onSelectEmoji={(emoji) => setContent(prev => prev + emoji)}
-                  onClose={() => setShowEmojiPicker(false)}
-                />
+              {/* Emoji Button */}
+              <div ref={emojiRef} className="relative">
+                <button
+                  onClick={() => {
+                    setShowEmojiPicker(!showEmojiPicker);
+                    setShowStickerPicker(false);
+                  }}
+                  title="Add Emoji"
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                    showEmojiPicker ? 'text-[#f0b232] bg-[#313338]' : 'text-gray-400 hover:text-[#f0b232] hover:bg-[#313338]'
+                  }`}
+                >
+                  <Smile size={19} />
+                </button>
+                {showEmojiPicker && (
+                  <div className="absolute right-0 bottom-12 z-50">
+                    <EmojiPicker
+                      onSelectEmoji={(emoji) => setContent(prev => prev + emoji)}
+                      onClose={() => setShowEmojiPicker(false)}
+                    />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          {/* Send Button */}
-          {(content.trim() || attachments.length > 0) && (
-            <button
-              onClick={handleSend}
-              title="Send message"
-              className="p-1.5 bg-[#5865f2] hover:bg-[#4752c4] text-white rounded-lg transition-all animate-in zoom-in-75 duration-150 cursor-pointer"
-            >
-              <Send size={16} />
-            </button>
-          )}
-        </div>
+              {/* Voice Note Mic Button (when text is empty) */}
+              {!content.trim() && attachments.length === 0 && (
+                <button
+                  type="button"
+                  onClick={startVoiceRecording}
+                  title="Rekam Pesan Suara"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                >
+                  <Mic size={19} />
+                </button>
+              )}
+
+              {/* Send Button */}
+              {(content.trim() || attachments.length > 0) && (
+                <button
+                  onClick={handleSend}
+                  title="Send message"
+                  className="p-1.5 bg-[#5865f2] hover:bg-[#4752c4] text-white rounded-lg transition-all animate-in zoom-in-75 duration-150 cursor-pointer"
+                >
+                  <Send size={16} />
+                </button>
+              )}
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Create Poll Modal */}
+      <CreatePollModal
+        isOpen={showPollModal}
+        onClose={() => setShowPollModal(false)}
+        onSubmitPoll={(poll) => {
+          onSendMessage('', [], undefined, replyingTo?.id, poll);
+          onCancelReply();
+        }}
+      />
     </div>
   );
 };

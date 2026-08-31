@@ -16,7 +16,7 @@ interface SocketContextType {
   activeChannelId: string | null;
   setActiveChannelId: (id: string | null) => void;
   typingUsers: { [channelId: string]: TypingUser[] };
-  sendMessage: (channelId: string, content: string, attachments?: any[], stickerUrl?: string, replyToId?: string) => void;
+  sendMessage: (channelId: string, content: string, attachments?: any[], stickerUrl?: string, replyToId?: string, poll?: any) => void;
   editMessage: (messageId: string, content: string) => void;
   deleteMessage: (messageId: string) => void;
   addReaction: (messageId: string, emoji: string) => void;
@@ -122,14 +122,15 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
   }, [socket, isConnected, activeChannelId]);
 
-  const sendMessage = useCallback((channelId: string, content: string, attachments: any[] = [], stickerUrl?: string, replyToId?: string) => {
+  const sendMessage = useCallback((channelId: string, content: string, attachments: any[] = [], stickerUrl?: string, replyToId?: string, poll?: any) => {
     if (!socket) return;
     socket.emit('send_message', {
       channelId,
       content,
       attachments,
       stickerUrl,
-      replyToId
+      replyToId,
+      poll
     });
     soundEffects.playMessagePop();
   }, [socket]);

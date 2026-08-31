@@ -1,8 +1,9 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useVoice } from '../../context/VoiceContext';
 import { useToast } from '../../context/ToastContext';
-import { X, User, Mic, ShieldCheck, LogOut, CheckCircle2, RefreshCw, Upload, Sparkles, Image as ImageIcon, Rocket, Mail, Lock, Key, Smartphone, FileCheck } from 'lucide-react';
+import { useTheme, THEME_OPTIONS } from '../../context/ThemeContext';
+import { X, User, Mic, ShieldCheck, LogOut, CheckCircle2, RefreshCw, Upload, Sparkles, Image as ImageIcon, Rocket, Mail, Lock, Key, Smartphone, FileCheck, Palette, Check } from 'lucide-react';
 import { ImageUploadCropModal } from './ImageUploadCropModal';
 import { Setup2FAModal } from './Setup2FAModal';
 import { Disable2FAModal } from './Disable2FAModal';
@@ -17,8 +18,9 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
   const { user, updateProfile, logout } = useAuth();
   const { isMuted } = useVoice();
   const { showSuccess, showError } = useToast();
+  const { theme, setTheme } = useTheme();
 
-  const [tab, setTab] = useState<'profile' | 'voice' | 'security' | 'upgrade'>('profile');
+  const [tab, setTab] = useState<'profile' | 'voice' | 'security' | 'appearance' | 'upgrade'>('profile');
 
   // Profile Form States
   const [username, setUsername] = useState(user?.username || '');
@@ -288,6 +290,18 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
               >
                 <ShieldCheck size={16} />
                 <span>Keamanan & Privasi</span>
+              </button>
+
+              <button
+                onClick={() => setTab('appearance')}
+                className={`w-full px-3.5 py-2.5 rounded-xl flex items-center space-x-3 text-xs font-semibold transition-all cursor-pointer ${
+                  tab === 'appearance'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
+                }`}
+              >
+                <Palette size={16} />
+                <span>Tema & Tampilan</span>
               </button>
 
               {isGuestUser && (
@@ -677,6 +691,66 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
                     </div>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Appearance / Theme Picker Tab */}
+            {tab === 'appearance' && (
+              <div className="space-y-6 animate-in fade-in duration-150">
+                <div>
+                  <div className="flex items-center space-x-2.5 mb-1">
+                    <Palette size={20} className="text-indigo-400" />
+                    <h3 className="text-base font-bold text-white">Tema & Palet Tampilan</h3>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Pilih palet tema AeroCord sesuai dengan kenyamanan mata dan gaya visual favorit Anda.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  {THEME_OPTIONS.map((opt) => {
+                    const isCurrent = theme === opt.id;
+                    return (
+                      <div
+                        key={opt.id}
+                        onClick={() => {
+                          setTheme(opt.id);
+                          showSuccess('Tema Diterapkan', `Tema ${opt.name} aktif.`);
+                        }}
+                        className={`relative rounded-2xl p-4 border transition-all cursor-pointer group flex flex-col justify-between ${
+                          isCurrent
+                            ? 'bg-[#181b24] border-indigo-500 shadow-xl ring-2 ring-indigo-500/20'
+                            : 'bg-[#0c0e14] border-white/5 hover:border-white/20 hover:bg-[#13161f]'
+                        }`}
+                      >
+                        {/* Color Preview Swatch */}
+                        <div className={`h-12 w-full rounded-xl bg-gradient-to-r ${opt.previewGradient} mb-3 shadow-md flex items-center justify-end p-2`}>
+                          {isCurrent && (
+                            <div className="w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center shadow-lg">
+                              <Check size={14} className="text-white" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <h4 className="text-xs font-bold text-white group-hover:text-indigo-300 transition-colors">
+                              {opt.name}
+                            </h4>
+                            {isCurrent && (
+                              <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${opt.badgeBg} ${opt.badgeText}`}>
+                                Aktif
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 leading-relaxed">
+                            {opt.description}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
