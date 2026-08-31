@@ -36,7 +36,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onToggleSidebar
 }) => {
   const { user } = useAuth();
-  const { socket, typingUsers, sendMessage, editMessage, deleteMessage, addReaction, startTyping, stopTyping } = useSocket();
+  const { socket, typingUsers, onlineUsers, sendMessage, editMessage, deleteMessage, addReaction, startTyping, stopTyping } = useSocket();
   const { startDirectCall } = useVoice();
   const { showInfo, showSuccess } = useToast();
 
@@ -186,18 +186,39 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </button>
           )}
 
-          <div className={`p-2 rounded-xl ${channel?.type === 'voice' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
-            {channel?.type === 'voice' ? (
-              <Volume2 size={18} />
-            ) : conversation ? (
-              <AtSign size={18} />
-            ) : (
-              <Hash size={18} />
-            )}
-          </div>
+          {conversation && recipientUser ? (
+            <div className="relative flex-shrink-0">
+              <img
+                src={recipientUser.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${recipientUser.id}`}
+                alt={recipientUser.username}
+                className="w-8 h-8 rounded-xl object-cover border border-white/10"
+              />
+              <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#11131a] ${
+                onlineUsers.get(recipientUser.id)?.status === 'online' ? 'bg-emerald-500' : 'bg-slate-500'
+              }`} />
+            </div>
+          ) : (
+            <div className={`p-2 rounded-xl ${channel?.type === 'voice' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
+              {channel?.type === 'voice' ? (
+                <Volume2 size={18} />
+              ) : (
+                <Hash size={18} />
+              )}
+            </div>
+          )}
+
           <div>
             <div className="font-bold text-sm text-slate-100 flex items-center space-x-2">
-              <span>{displayName}</span>
+              <span>{displayName.replace(/^@/, '')}</span>
+              {conversation && recipientUser && (
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${
+                  onlineUsers.get(recipientUser.id)?.status === 'online'
+                    ? 'text-emerald-400 bg-emerald-500/10'
+                    : 'text-slate-400 bg-white/5'
+                }`}>
+                  {onlineUsers.get(recipientUser.id)?.status === 'online' ? 'Online' : 'Offline'}
+                </span>
+              )}
             </div>
             {channel?.topic && (
               <div className="text-[11px] text-slate-400 truncate max-w-lg hidden sm:block">

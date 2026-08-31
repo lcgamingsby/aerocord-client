@@ -22,8 +22,8 @@ interface VoiceContextType {
   setUserVolume: (userId: string, volume: number) => void;
   activeCall: ActiveCallSession | null;
   incomingCall: { caller: User; conversationId: string; isVideo: boolean } | null;
-  startDirectCall: (targetUser: User, conversationId: string, isVideo?: boolean) => void;
-  acceptCall: () => void;
+  startDirectCall: (targetUser: User, conversationId: string, isVideo?: boolean) => Promise<void>;
+  acceptCall: () => Promise<void>;
   rejectCall: () => void;
   endCall: () => void;
 }
@@ -58,14 +58,88 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [activeCall, setActiveCall] = useState<ActiveCallSession | null>(null);
   const [incomingCall, setIncomingCall] = useState<{ caller: User; conversationId: string; isVideo: boolean } | null>(null);
 
+  // Sync references to prevent stale closures in async WebRTC and socket handlers
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const activeCallRef = useRef<ActiveCallSession | null>(null);
+  const currentVoiceChannelRef = useRef<string | null>(null);
+  const isDeafenedRef = useRef<boolean>(false);
+  const isMutedRef = useRef<boolean>(false);
+  const userVolumesRef = useRef<Map<string, number>>(new Map());
+
   // WebRTC Peer Connections: peerUserId -> RTCPeerConnection
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
+  // HTMLAudioElements for playing remote audio: peerUserId -> HTMLAudioElement
+  const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const speakingIntervalRef = useRef<number | null>(null);
 
+  // Keep refs in sync with state
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+  }, [activeCall]);
+
+  useEffect(() => {
+    currentVoiceChannelRef.current = currentVoiceChannel;
+  }, [currentVoiceChannel]);
+
+  useEffect(() => {
+    isDeafenedRef.current = isDeafened;
+    // Update all audio elements volume immediately
+    audioElementsRef.current.forEach((audioEl, peerId) => {
+      const vol = isDeafened ? 0 : ((userVolumesRef.current.get(peerId) ?? 100) / 100);
+      audioEl.volume = Math.max(0, Math.min(1, vol));
+    });
+  }, [isDeafened]);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  useEffect(() => {
+    userVolumesRef.current = userVolumes;
+    // Update audio element volume for each peer
+    audioElementsRef.current.forEach((audioEl, peerId) => {
+      const vol = isDeafenedRef.current ? 0 : ((userVolumes.get(peerId) ?? 100) / 100);
+      audioEl.volume = Math.max(0, Math.min(1, vol));
+    });
+  }, [userVolumes]);
+
+  // Clean disconnect on tab refresh / page close
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (socket) {
+        if (activeCallRef.current) {
+          socket.emit('call_end', {
+            targetUserId: activeCallRef.current.targetUser.id,
+            conversationId: activeCallRef.current.conversationId
+          });
+        }
+        if (currentVoiceChannelRef.current) {
+          socket.emit('voice_leave_channel', {
+            channelId: currentVoiceChannelRef.current
+          });
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handleBeforeUnload);
+    };
+  }, [socket]);
+
   // Initialize Microphone & Web Audio Analyser for Speaking Detection
   const initLocalAudio = async (): Promise<MediaStream | null> => {
+    if (localStreamRef.current && localStreamRef.current.active) {
+      return localStreamRef.current;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -76,51 +150,56 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         video: false
       });
 
+      localStreamRef.current = stream;
       setLocalStream(stream);
 
       // Setup Web Audio Volume Visualizer / Speaking Detector
       try {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        const ctx = new AudioContextClass();
-        audioContextRef.current = ctx;
+        if (!audioContextRef.current) {
+          const ctx = new AudioContextClass();
+          audioContextRef.current = ctx;
 
-        const source = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        analyserRef.current = analyser;
+          const source = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 256;
+          source.connect(analyser);
+          analyserRef.current = analyser;
 
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
+          const bufferLength = analyser.frequencyBinCount;
+          const dataArray = new Uint8Array(bufferLength);
 
-        let wasSpeaking = false;
+          let wasSpeaking = false;
 
-        speakingIntervalRef.current = window.setInterval(() => {
-          if (!analyserRef.current || isMuted) {
-            if (wasSpeaking && socket && currentVoiceChannel) {
-              wasSpeaking = false;
-              socket.emit('voice_speaking', { channelId: currentVoiceChannel, isSpeaking: false });
+          if (speakingIntervalRef.current) clearInterval(speakingIntervalRef.current);
+
+          speakingIntervalRef.current = window.setInterval(() => {
+            if (!analyserRef.current || isMutedRef.current) {
+              if (wasSpeaking && socket && currentVoiceChannelRef.current) {
+                wasSpeaking = false;
+                socket.emit('voice_speaking', { channelId: currentVoiceChannelRef.current, isSpeaking: false });
+              }
+              return;
             }
-            return;
-          }
 
-          analyserRef.current.getByteFrequencyData(dataArray);
-          let sum = 0;
-          for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
-          }
-          const average = sum / bufferLength;
-          const isSpeakingNow = average > 12; // Threshold for speaking
-
-          if (isSpeakingNow !== wasSpeaking) {
-            wasSpeaking = isSpeakingNow;
-            if (socket && currentVoiceChannel) {
-              socket.emit('voice_speaking', { channelId: currentVoiceChannel, isSpeaking: isSpeakingNow });
+            analyserRef.current.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < bufferLength; i++) {
+              sum += dataArray[i];
             }
-          }
-        }, 150);
+            const average = sum / bufferLength;
+            const isSpeakingNow = average > 12; // Threshold for speaking
+
+            if (isSpeakingNow !== wasSpeaking) {
+              wasSpeaking = isSpeakingNow;
+              if (socket && currentVoiceChannelRef.current) {
+                socket.emit('voice_speaking', { channelId: currentVoiceChannelRef.current, isSpeaking: isSpeakingNow });
+              }
+            }
+          }, 150);
+        }
       } catch (e) {
-        console.warn('AudioContext speaking detector setup notice:', e);
+        console.warn('AudioContext speaking detector notice:', e);
       }
 
       return stream;
@@ -130,29 +209,61 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const createPeerConnection = (targetUserId: string, channelId: string, stream: MediaStream | null): RTCPeerConnection => {
+  // Helper to play incoming audio track from WebRTC
+  const playRemoteAudio = (targetUserId: string, stream: MediaStream) => {
+    let audioEl = audioElementsRef.current.get(targetUserId);
+    if (!audioEl) {
+      audioEl = new Audio();
+      audioEl.autoplay = true;
+      audioElementsRef.current.set(targetUserId, audioEl);
+    }
+
+    if (audioEl.srcObject !== stream) {
+      audioEl.srcObject = stream;
+    }
+
+    const vol = isDeafenedRef.current ? 0 : ((userVolumesRef.current.get(targetUserId) ?? 100) / 100);
+    audioEl.volume = Math.max(0, Math.min(1, vol));
+
+    audioEl.play().catch(e => {
+      console.warn('Remote audio playback auto-play notice (user interaction required):', e);
+    });
+  };
+
+  const createPeerConnection = (targetUserId: string, channelId: string): RTCPeerConnection => {
     if (peerConnections.current.has(targetUserId)) {
       peerConnections.current.get(targetUserId)!.close();
     }
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    // Add local tracks
-    if (stream) {
-      stream.getTracks().forEach(track => {
-        pc.addTrack(track, stream);
+    // Add microphone tracks if available
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current!);
       });
     }
 
-    // Handle remote track
+    // Add screen share tracks (video and audio) if active
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, screenStreamRef.current!);
+      });
+    }
+
+    // Handle remote track received
     pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (remoteStream) {
-        setRemoteStreams(prev => {
-          const next = new Map(prev);
-          next.set(targetUserId, remoteStream);
-          return next;
-        });
+      const stream = event.streams[0] || new MediaStream([event.track]);
+      
+      setRemoteStreams(prev => {
+        const next = new Map(prev);
+        next.set(targetUserId, stream);
+        return next;
+      });
+
+      // Play audio automatically
+      if (event.track.kind === 'audio' || stream.getAudioTracks().length > 0) {
+        playRemoteAudio(targetUserId, stream);
       }
     };
 
@@ -181,31 +292,38 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       leaveVoiceChannel();
     }
 
-    const stream = await initLocalAudio();
+    await initLocalAudio();
     setCurrentVoiceChannel(channelId);
+    currentVoiceChannelRef.current = channelId;
     soundEffects.playJoinVoiceSound();
 
     socket.emit('voice_join_channel', {
       channelId,
-      isMuted,
-      isDeafened
+      isMuted: isMutedRef.current,
+      isDeafened: isDeafenedRef.current
     });
   };
 
   const leaveVoiceChannel = useCallback(() => {
-    if (!socket || !currentVoiceChannel) return;
+    if (!socket) return;
 
-    soundEffects.playLeaveVoiceSound();
-    socket.emit('voice_leave_channel', { channelId: currentVoiceChannel });
+    const chId = currentVoiceChannelRef.current;
+    if (chId) {
+      soundEffects.playLeaveVoiceSound();
+      socket.emit('voice_leave_channel', { channelId: chId });
+    }
 
-    // Clean up local tracks
-    if (localStream) {
-      localStream.getTracks().forEach(t => t.stop());
+    // Clean up local mic stream
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(t => t.stop());
+      localStreamRef.current = null;
       setLocalStream(null);
     }
 
-    if (screenStream) {
-      screenStream.getTracks().forEach(t => t.stop());
+    // Clean up screen share
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
       setScreenStream(null);
       setIsScreenSharing(false);
     }
@@ -220,6 +338,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audioContextRef.current = null;
     }
 
+    // Stop and clear all audio playback elements
+    audioElementsRef.current.forEach(audioEl => {
+      audioEl.pause();
+      audioEl.srcObject = null;
+    });
+    audioElementsRef.current.clear();
+
     // Close all peer connections
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
@@ -227,7 +352,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setRemoteStreams(new Map());
     setVoiceParticipants([]);
     setCurrentVoiceChannel(null);
-  }, [socket, currentVoiceChannel, localStream, screenStream]);
+    currentVoiceChannelRef.current = null;
+  }, [socket]);
 
   // Socket event listeners for Voice Channel and Calls
   useEffect(() => {
@@ -236,11 +362,16 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     socket.on('voice_channel_state', async (data: { channelId: string; participants: VoiceParticipant[] }) => {
       setVoiceParticipants(data.participants);
 
+      // Ensure local audio is initialized before creating offers
+      if (!localStreamRef.current) {
+        await initLocalAudio();
+      }
+
       // Initiate WebRTC offers to existing participants
       data.participants.forEach(async (peer) => {
         if (peer.userId === user?.id) return;
 
-        const pc = createPeerConnection(peer.userId, data.channelId, localStream);
+        const pc = createPeerConnection(peer.userId, data.channelId);
         try {
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
@@ -255,7 +386,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     });
 
-    socket.on('voice_peer_joined', (participant: VoiceParticipant) => {
+    socket.on('voice_peer_joined', async (participant: VoiceParticipant) => {
       setVoiceParticipants(prev => {
         if (prev.some(p => p.userId === participant.userId)) return prev;
         return [...prev, participant];
@@ -265,17 +396,36 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     socket.on('voice_peer_left', (data: { userId: string; channelId: string }) => {
       setVoiceParticipants(prev => prev.filter(p => p.userId !== data.userId));
+
       const pc = peerConnections.current.get(data.userId);
       if (pc) {
         pc.close();
         peerConnections.current.delete(data.userId);
       }
+
+      // Clean up audio element for departed peer
+      const audioEl = audioElementsRef.current.get(data.userId);
+      if (audioEl) {
+        audioEl.pause();
+        audioEl.srcObject = null;
+        audioElementsRef.current.delete(data.userId);
+      }
+
       setRemoteStreams(prev => {
         const next = new Map(prev);
         next.delete(data.userId);
         return next;
       });
+
       soundEffects.playLeaveVoiceSound();
+
+      // If in a 1-on-1 direct call and the other person left / refreshed, terminate call cleanly
+      if (activeCallRef.current && (activeCallRef.current.targetUser.id === data.userId || activeCallRef.current.conversationId === data.channelId)) {
+        soundEffects.stopRingtone();
+        setActiveCall(null);
+        setIncomingCall(null);
+        leaveVoiceChannel();
+      }
     });
 
     socket.on('voice_peer_speaking', (data: { userId: string; isSpeaking: boolean }) => {
@@ -305,9 +455,14 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     socket.on('voice_signal', async (data: { senderUserId: string; signal: any; channelId: string }) => {
       const { senderUserId, signal, channelId } = data;
 
+      // Ensure local audio is initialized before answering
+      if (!localStreamRef.current) {
+        await initLocalAudio();
+      }
+
       let pc = peerConnections.current.get(senderUserId);
       if (!pc) {
-        pc = createPeerConnection(senderUserId, channelId, localStream);
+        pc = createPeerConnection(senderUserId, channelId);
       }
 
       if (signal.type === 'offer') {
@@ -344,13 +499,14 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       soundEffects.startRingtone();
     });
 
-    socket.on('call_answered', (data: { calleeId: string; conversationId: string; accepted: boolean }) => {
+    socket.on('call_answered', async (data: { calleeId: string; conversationId: string; accepted: boolean }) => {
       soundEffects.stopRingtone();
       if (data.accepted) {
         setActiveCall(prev => prev ? { ...prev, status: 'connected' } : null);
-        joinVoiceChannel(data.conversationId);
+        await joinVoiceChannel(data.conversationId);
       } else {
         setActiveCall(null);
+        leaveVoiceChannel();
       }
     });
 
@@ -372,28 +528,30 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       socket.off('call_answered');
       socket.off('call_ended');
     };
-  }, [socket, localStream, user]);
+  }, [socket, user, leaveVoiceChannel]);
 
   const toggleMute = () => {
     const nextState = !isMuted;
     setIsMuted(nextState);
+    isMutedRef.current = nextState;
+
     if (nextState) {
       soundEffects.playMuteSound();
     } else {
       soundEffects.playUnmuteSound();
     }
 
-    if (localStream) {
-      localStream.getAudioTracks().forEach(t => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(t => {
         t.enabled = !nextState;
       });
     }
 
-    if (socket && currentVoiceChannel) {
+    if (socket && currentVoiceChannelRef.current) {
       socket.emit('voice_state_update', {
-        channelId: currentVoiceChannel,
+        channelId: currentVoiceChannelRef.current,
         isMuted: nextState,
-        isDeafened
+        isDeafened: isDeafenedRef.current
       });
     }
   };
@@ -401,6 +559,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const toggleDeafen = () => {
     const nextState = !isDeafened;
     setIsDeafened(nextState);
+    isDeafenedRef.current = nextState;
+
     if (nextState) {
       soundEffects.playMuteSound();
     } else {
@@ -408,14 +568,14 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // Auto-mute when deafened
-    if (nextState && !isMuted) {
+    if (nextState && !isMutedRef.current) {
       toggleMute();
     }
 
-    if (socket && currentVoiceChannel) {
+    if (socket && currentVoiceChannelRef.current) {
       socket.emit('voice_state_update', {
-        channelId: currentVoiceChannel,
-        isMuted: nextState ? true : isMuted,
+        channelId: currentVoiceChannelRef.current,
+        isMuted: nextState ? true : isMutedRef.current,
         isDeafened: nextState
       });
     }
@@ -423,55 +583,65 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-      if (screenStream) {
-        screenStream.getTracks().forEach(t => t.stop());
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(t => t.stop());
+        screenStreamRef.current = null;
         setScreenStream(null);
       }
       setIsScreenSharing(false);
-      if (socket && currentVoiceChannel) {
+      if (socket && currentVoiceChannelRef.current) {
         socket.emit('voice_state_update', {
-          channelId: currentVoiceChannel,
+          channelId: currentVoiceChannelRef.current,
           isScreenSharing: false
         });
       }
     } else {
       try {
         const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        screenStreamRef.current = stream;
         setScreenStream(stream);
         setIsScreenSharing(true);
 
-        // Add video track to all active peer connections
+        // Add all screen tracks (both video AND audio) to all active peer connections
         peerConnections.current.forEach((pc, peerId) => {
-          stream.getVideoTracks().forEach(track => {
+          stream.getTracks().forEach(track => {
             pc.addTrack(track, stream);
           });
           // Renegotiate with peer
-          if (socket && currentVoiceChannel) {
+          if (socket && currentVoiceChannelRef.current) {
             pc.createOffer().then(offer => {
               pc.setLocalDescription(offer);
               socket.emit('voice_signal', {
                 targetUserId: peerId,
                 signal: { type: 'offer', sdp: offer },
-                channelId: currentVoiceChannel
+                channelId: currentVoiceChannelRef.current
               });
             }).catch(e => console.warn('Renegotiation offer error:', e));
           }
         });
 
-        stream.getVideoTracks()[0].onended = () => {
-          setIsScreenSharing(false);
-          setScreenStream(null);
-          if (socket && currentVoiceChannel) {
-            socket.emit('voice_state_update', {
-              channelId: currentVoiceChannel,
-              isScreenSharing: false
-            });
-          }
-        };
+        // Handle user stopping screen share via browser floating bar
+        const primaryTrack = stream.getVideoTracks()[0] || stream.getTracks()[0];
+        if (primaryTrack) {
+          primaryTrack.onended = () => {
+            setIsScreenSharing(false);
+            if (screenStreamRef.current) {
+              screenStreamRef.current.getTracks().forEach(t => t.stop());
+              screenStreamRef.current = null;
+            }
+            setScreenStream(null);
+            if (socket && currentVoiceChannelRef.current) {
+              socket.emit('voice_state_update', {
+                channelId: currentVoiceChannelRef.current,
+                isScreenSharing: false
+              });
+            }
+          };
+        }
 
-        if (socket && currentVoiceChannel) {
+        if (socket && currentVoiceChannelRef.current) {
           socket.emit('voice_state_update', {
-            channelId: currentVoiceChannel,
+            channelId: currentVoiceChannelRef.current,
             isScreenSharing: true
           });
         }
@@ -490,8 +660,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Direct Call Actions
-  const startDirectCall = (targetUser: User, conversationId: string, isVideo = false) => {
+  const startDirectCall = async (targetUser: User, conversationId: string, isVideo = false) => {
     if (!socket) return;
+    await initLocalAudio();
     setActiveCall({
       targetUser,
       conversationId,
@@ -507,9 +678,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
   };
 
-  const acceptCall = () => {
+  const acceptCall = async () => {
     if (!incomingCall || !socket) return;
     soundEffects.stopRingtone();
+    await initLocalAudio();
     socket.emit('call_response', {
       callerId: incomingCall.caller.id,
       conversationId: incomingCall.conversationId,
@@ -522,8 +694,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       isVideo: incomingCall.isVideo,
       status: 'connected'
     });
+    const convoId = incomingCall.conversationId;
     setIncomingCall(null);
-    joinVoiceChannel(incomingCall.conversationId);
+    await joinVoiceChannel(convoId);
   };
 
   const rejectCall = () => {
@@ -538,10 +711,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const endCall = () => {
-    if (activeCall && socket) {
+    if (activeCallRef.current && socket) {
       socket.emit('call_end', {
-        targetUserId: activeCall.targetUser.id,
-        conversationId: activeCall.conversationId
+        targetUserId: activeCallRef.current.targetUser.id,
+        conversationId: activeCallRef.current.conversationId
       });
     }
     soundEffects.stopRingtone();
@@ -588,3 +761,4 @@ export const useVoice = (): VoiceContextType => {
   }
   return context;
 };
+
