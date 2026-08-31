@@ -7,11 +7,12 @@
     --bg-card: #13161f;
     --bg-elevated: #181b24;
     --brand-primary: #6366f1;
-    --brand-cyan: #06b6d4;
-    --brand-emerald: #10b981;
+    --brand-secondary: #06b6d4;
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
+    --border-subtle: rgba(255,255,255,0.06);
+    --border-medium: rgba(255,255,255,0.10);
   }
 
   [data-theme="oled"] {
@@ -20,11 +21,12 @@
     --bg-card: #121212;
     --bg-elevated: #1a1a1a;
     --brand-primary: #ffffff;
-    --brand-cyan: #38bdf8;
-    --brand-emerald: #34d399;
+    --brand-secondary: #38bdf8;
     --text-primary: #ffffff;
     --text-secondary: #a3a3a3;
     --text-muted: #737373;
+    --border-subtle: rgba(255,255,255,0.06);
+    --border-medium: rgba(255,255,255,0.10);
   }
 
   [data-theme="cyberpunk"] {
@@ -33,11 +35,12 @@
     --bg-card: #1d0e2e;
     --bg-elevated: #28133f;
     --brand-primary: #d946ef;
-    --brand-cyan: #06b6d4;
-    --brand-emerald: #10b981;
+    --brand-secondary: #06b6d4;
     --text-primary: #fdf4ff;
     --text-secondary: #d8b4fe;
     --text-muted: #a855f7;
+    --border-subtle: rgba(217,70,239,0.12);
+    --border-medium: rgba(217,70,239,0.18);
   }
 
   [data-theme="emerald"] {
@@ -46,11 +49,12 @@
     --bg-card: #0f261e;
     --bg-elevated: #16362b;
     --brand-primary: #10b981;
-    --brand-cyan: #14b8a6;
-    --brand-emerald: #059669;
+    --brand-secondary: #14b8a6;
     --text-primary: #f0fdf4;
     --text-secondary: #a7f3d0;
     --text-muted: #6ee7b7;
+    --border-subtle: rgba(16,185,129,0.10);
+    --border-medium: rgba(16,185,129,0.16);
   }
 
   [data-theme="sunset"] {
@@ -59,11 +63,12 @@
     --bg-card: #2c1612;
     --bg-elevated: #3a1e19;
     --brand-primary: #f59e0b;
-    --brand-cyan: #fb923c;
-    --brand-emerald: #10b981;
+    --brand-secondary: #fb923c;
     --text-primary: #fffbeb;
     --text-secondary: #fde68a;
     --text-muted: #fbbf24;
+    --border-subtle: rgba(245,158,11,0.10);
+    --border-medium: rgba(245,158,11,0.16);
   }
 
   html, body, #root {
@@ -78,6 +83,33 @@
     overflow: hidden;
     user-select: none;
     -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* ============================================================
+   THEME OVERRIDES — remap hardcoded midnight colors per theme
+   ============================================================ */
+
+/* Helper: every element using the hardcoded midnight colors
+   gets replaced with the equivalent CSS variable background.
+   We target via attribute selector on <html> set by ThemeContext. */
+
+[data-theme]:not([data-theme="midnight"]) {
+  /* Override common hardcoded bg utility classes */
+  .bg-\[\#0b0c10\] { background-color: var(--bg-main) !important; }
+  .bg-\[\#11131a\] { background-color: var(--bg-surface) !important; }
+  .bg-\[\#13161f\] { background-color: var(--bg-card) !important; }
+  .bg-\[\#181b24\] { background-color: var(--bg-elevated) !important; }
+
+  /* Opacity variants */
+  .bg-\[\#11131a\]\/80 { background-color: color-mix(in srgb, var(--bg-surface) 80%, transparent) !important; }
+  .bg-\[\#11131a\]\/90 { background-color: color-mix(in srgb, var(--bg-surface) 90%, transparent) !important; }
+  .bg-\[\#13161f\]\/95 { background-color: color-mix(in srgb, var(--bg-card) 95%, transparent) !important; }
+
+  /* Key layout containers — targeted by known structure */
+  /* Main app wrapper */
+  div.flex.h-\[100dvh\].w-screen {
+    background-color: var(--bg-main) !important;
   }
 }
 
