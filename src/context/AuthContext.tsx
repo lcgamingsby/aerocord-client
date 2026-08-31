@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, FriendRelationItem, UserStatus } from '../types';
 import { apiUrl } from '../config/api';
 
@@ -9,7 +9,8 @@ interface AuthContextType {
   friends: FriendRelationItem[];
   login: (identifier: string, pass: string) => Promise<{ success: boolean; twoFactorRequired?: boolean; twoFactorType?: 'google' | 'file' | 'email'; challengeId?: string; maskedEmail?: string; message?: string; error?: string }>;
   verify2FA: (challengeId: string, code?: string, keyFileContent?: string) => Promise<{ success: boolean; error?: string }>;
-  register: (username: string, email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  sendRegistrationOTP: (username: string, email: string, pass: string, avatar?: string) => Promise<{ success: boolean; message?: string; error?: string }>;
+  register: (email: string, code: string, avatar?: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   guestLogin: (guestId?: string, customName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateProfile: (updates: Partial<User>) => Promise<boolean>;
@@ -123,23 +124,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (username: string, email: string, pass: string) => {
+  const sendRegistrationOTP = async (username: string, email: string, pass: string, avatar?: string) => {
+    try {
+      const res = await fetch(apiUrl('/api/auth/register/send-otp'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, email, password: pass, avatar })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, error: data.error || 'Gagal mengirim kode verifikasi' };
+      }
+      return { success: true, message: data.message };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Kesalahan jaringan' };
+    }
+  };
+
+  const register = async (email: string, code: string, avatar?: string) => {
     try {
       const res = await fetch(apiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, email, password: pass })
+        body: JSON.stringify({ email, code, avatar })
       });
       const data = await res.json();
       if (!res.ok) {
-        return { success: false, error: data.error || 'Registration failed' };
+        return { success: false, error: data.error || 'Verifikasi registrasi gagal' };
       }
       localStorage.setItem('aerocord_token', data.token);
       setToken(data.token);
       setUser(data.user);
-      return { success: true };
+      return { success: true, message: data.message };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Network error' };
+      return { success: false, error: err.message || 'Kesalahan jaringan' };
     }
   };
 
@@ -257,6 +275,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         friends,
         login,
         verify2FA,
+        sendRegistrationOTP,
         register,
         guestLogin,
         logout,
