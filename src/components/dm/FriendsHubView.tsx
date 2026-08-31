@@ -66,7 +66,7 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({
     : displayedFriends;
 
   return (
-    <div className="flex-1 flex flex-col bg-[#0d0f14] h-full overflow-hidden select-none">
+    <div className="flex-1 flex flex-col bg-[#0d0f14] h-full overflow-hidden select-none relative">
       {/* Top Tab Navigation Bar */}
       <div className="h-14 px-4 sm:px-6 border-b border-white/5 flex items-center space-x-4 sm:space-x-6 bg-[#11131a]/80 backdrop-blur-md flex-shrink-0">
         <div className="flex items-center space-x-2.5 text-white font-black text-sm">
@@ -130,7 +130,15 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-6 relative">
+        {/* Tap-to-open-sidebar overlay: only shown on mobile when sidebar is collapsed */}
+        {isSidebarCollapsed && onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className="absolute inset-0 z-10 bg-transparent cursor-pointer md:hidden"
+            aria-label="Buka sidebar"
+          />
+        )}
         {/* ADD FRIEND TAB */}
         {activeTab === 'add_friend' && (
           <div className="max-w-2xl space-y-6">
