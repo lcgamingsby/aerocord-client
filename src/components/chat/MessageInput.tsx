@@ -46,8 +46,16 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const isGuestUser = user?.isGuest || user?.id.startsWith('guest_') || user?.email.endsWith('@guest.aerocord.app');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   const stickerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-focus input when clicking Reply on a message
+  useEffect(() => {
+    if (replyingTo && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [replyingTo]);
 
   // Voice Note Recorder Handlers
   const startVoiceRecording = async () => {
@@ -398,6 +406,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
 
             {/* Textarea */}
             <textarea
+              ref={textareaRef}
               value={content}
               onChange={(e) => {
                 setContent(e.target.value);

@@ -15,6 +15,23 @@ interface UserProfileModalProps {
   onStartDM?: (userId: string) => void;
 }
 
+const getBannerStyle = (bannerValue?: string): React.CSSProperties => {
+  if (!bannerValue) {
+    return { background: 'linear-gradient(135deg, #6366f1, #06b6d4)' };
+  }
+  if (bannerValue.startsWith('data:image') || bannerValue.startsWith('http://') || bannerValue.startsWith('https://') || bannerValue.startsWith('/')) {
+    return {
+      backgroundImage: `url(${bannerValue})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundColor: '#11131a'
+    };
+  }
+  return {
+    background: `linear-gradient(135deg, ${bannerValue}, #0f172a)`
+  };
+};
+
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   user,
   memberInfo,
@@ -69,11 +86,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         {/* Banner with Gradient & Custom Color */}
         <div
           className="h-28 w-full relative transition-all"
-          style={{
-            background: user.bannerColor
-              ? `linear-gradient(135deg, ${user.bannerColor}, #0f172a)`
-              : 'linear-gradient(135deg, #6366f1, #06b6d4)'
-          }}
+          style={getBannerStyle(user.banner || user.bannerColor)}
         >
           {/* Close button */}
           <button

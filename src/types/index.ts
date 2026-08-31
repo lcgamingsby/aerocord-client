@@ -6,6 +6,7 @@ export interface User {
   discriminator: string;
   email: string;
   avatar: string;
+  banner?: string;
   bannerColor?: string;
   customStatus?: string;
   status: UserStatus;

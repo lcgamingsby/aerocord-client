@@ -14,6 +14,23 @@ interface UserSettingsModalProps {
   onClose: () => void;
 }
 
+const getBannerStyle = (bannerValue?: string): React.CSSProperties => {
+  if (!bannerValue) {
+    return { background: 'linear-gradient(135deg, #6366f1, #06b6d4)' };
+  }
+  if (bannerValue.startsWith('data:image') || bannerValue.startsWith('http://') || bannerValue.startsWith('https://') || bannerValue.startsWith('/')) {
+    return {
+      backgroundImage: `url(${bannerValue})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      backgroundColor: '#11131a'
+    };
+  }
+  return {
+    background: `linear-gradient(135deg, ${bannerValue}, #0f172a)`
+  };
+};
+
 export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, onClose }) => {
   const { user, updateProfile, logout } = useAuth();
   const { isMuted } = useVoice();
@@ -25,7 +42,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
   // Profile Form States
   const [username, setUsername] = useState(user?.username || '');
   const [avatar, setAvatar] = useState(user?.avatar || '');
-  const [bannerColor, setBannerColor] = useState(user?.bannerColor || '#6366f1');
+  const [banner, setBanner] = useState(user?.banner || user?.bannerColor || '#6366f1');
   const [customStatus, setCustomStatus] = useState(user?.customStatus || '');
   const [bio, setBio] = useState(user?.bio || '');
   const [isSaving, setIsSaving] = useState(false);
@@ -66,7 +83,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
     if (user) {
       setUsername(user.username);
       setAvatar(user.avatar);
-      setBannerColor(user.bannerColor || '#6366f1');
+      setBanner(user.banner || user.bannerColor || '#6366f1');
       setCustomStatus(user.customStatus || '');
       setBio(user.bio || '');
       setIs2FAEnabled(user.twoFactorEnabled || false);
@@ -152,7 +169,8 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
     const success = await updateProfile({
       username: username.trim(),
       avatar: avatar.trim(),
-      bannerColor,
+      banner,
+      bannerColor: banner,
       customStatus: customStatus.trim(),
       bio: bio.trim()
     });
@@ -358,11 +376,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
                 <div className="rounded-3xl overflow-hidden border border-white/10 bg-[#0c0e14] shadow-xl">
                   <div
                     className="h-24 w-full transition-colors relative flex items-center justify-end px-4"
-                    style={{
-                      background: bannerColor
-                        ? `linear-gradient(135deg, ${bannerColor}, #0f172a)`
-                        : 'linear-gradient(135deg, #6366f1, #06b6d4)'
-                    }}
+                    style={getBannerStyle(banner)}
                   >
                     <button
                       type="button"
@@ -909,7 +923,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
           if (cropTarget === 'avatar') {
             setAvatar(url);
           } else if (cropTarget === 'banner') {
-            setBannerColor(url);
+            setBanner(url);
           }
           setCropTarget(null);
         }}
