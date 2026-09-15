@@ -1,6 +1,7 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
-import { Server } from '../../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { Server, UserStatus } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { useVoice } from '../../context/VoiceContext';
 import { useToast } from '../../context/ToastContext';
 import { 
   MessageSquare, 
@@ -19,7 +20,11 @@ import {
   Clock, 
   VolumeX,
   Volume2,
-  FolderMinus
+  FolderMinus,
+  Mic,
+  MicOff,
+  Headphones,
+  Settings
 } from 'lucide-react';
 import { ServerFolderModal, ServerFolder } from '../modals/ServerFolderModal';
 
@@ -29,6 +34,8 @@ interface ServerSidebarProps {
   unreadDMCount?: number;
   onSelectServer: (serverId: string | null) => void;
   onOpenCreateServer: () => void;
+  isSidebarCollapsed?: boolean;
+  onOpenUserSettings?: () => void;
 }
 
 export const ServerSidebar: React.FC<ServerSidebarProps> = ({
@@ -36,10 +43,18 @@ export const ServerSidebar: React.FC<ServerSidebarProps> = ({
   activeServerId,
   unreadDMCount = 0,
   onSelectServer,
-  onOpenCreateServer
+  onOpenCreateServer,
+  isSidebarCollapsed = false,
+  onOpenUserSettings
 }) => {
-  const { friends } = useAuth();
+  const { user, friends, updateStatus } = useAuth();
+  const { isMuted, isDeafened, toggleMute, toggleDeafen } = useVoice();
   const { showSuccess, showInfo } = useToast();
+
+  // Floating user modal state
+  const [showUserModal, setShowUserModal] = useState(false);
+  const userModalRef = useRef<HTMLDivElement>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const pendingFriendRequests = friends.filter(f => f.status === 'pending' && !f.isSender).length;
   const totalNotifications = pendingFriendRequests + unreadDMCount;
@@ -79,20 +94,65 @@ export const ServerSidebar: React.FC<ServerSidebarProps> = ({
 
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
-  // Close context menu on outside click
+  // Close context menu & user modal on outside click
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node;
+      if (contextMenuRef.current && !contextMenuRef.current.contains(target)) {
         setContextMenu(null);
       }
+      if (userModalRef.current && !userModalRef.current.contains(target)) {
+        // Also ensure not clicking the avatar button itself if it was a toggle
+        setShowUserModal(false);
+      }
     };
-    window.addEventListener('click', handleClickOutside);
-    window.addEventListener('contextmenu', handleClickOutside);
+    window.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('touchstart', handleClickOutside);
+    window.addEventListener('contextmenu', handleClickOutside as EventListener);
     return () => {
-      window.removeEventListener('click', handleClickOutside);
-      window.removeEventListener('contextmenu', handleClickOutside);
+      window.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('touchstart', handleClickOutside);
+      window.removeEventListener('contextmenu', handleClickOutside as EventListener);
     };
   }, []);
+
+  const statusColors: { [key: string]: { bg: string; label: string } } = {
+    online: { bg: 'bg-emerald-500', label: 'Online' },
+    idle: { bg: 'bg-amber-500', label: 'Idle' },
+    dnd: { bg: 'bg-rose-500', label: 'Do Not Disturb' },
+    offline: { bg: 'bg-slate-500', label: 'Invisible' }
+  };
+
+  const statusOptions: { label: string; value: UserStatus; color: string }[] = [
+    { label: 'Online', value: 'online', color: 'bg-emerald-500' },
+    { label: 'Idle', value: 'idle', color: 'bg-amber-500' },
+    { label: 'Do Not Disturb', value: 'dnd', color: 'bg-rose-500' },
+    { label: 'Invisible', value: 'offline', color: 'bg-slate-500' }
+  ];
+
+  const currentStatus = user ? (statusColors[user.status] || statusColors.online) : statusColors.online;
+
+  // Hover handlers for Desktop
+  const handleUserMouseEnter = () => {
+    if (window.matchMedia('(hover: hover)').matches) {
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+      setShowUserModal(true);
+    }
+  };
+
+  const handleUserMouseLeave = () => {
+    if (window.matchMedia('(hover: hover)').matches) {
+      hoverTimeoutRef.current = setTimeout(() => {
+        setShowUserModal(false);
+      }, 250);
+    }
+  };
+
+  // Click/Tap handler for Mobile or explicit click
+  const handleUserClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowUserModal(prev => !prev);
+  };
 
   // Save folders to localStorage
   const saveFolders = (newFolders: ServerFolder[]) => {
@@ -418,6 +478,125 @@ export const ServerSidebar: React.FC<ServerSidebarProps> = ({
           </button>
         </div>
       </div>
+
+      {/* User Avatar & Quick Controls Button (Only visible when sidebar is collapsed) */}
+      {isSidebarCollapsed && user && (
+        <div 
+          className="relative group flex flex-col items-center justify-center w-full pt-2 mt-auto flex-shrink-0 border-t border-white/5"
+          onMouseEnter={handleUserMouseEnter}
+          onMouseLeave={handleUserMouseLeave}
+        >
+          <button
+            onClick={handleUserClick}
+            title={`${user.username}#${user.discriminator} (Klik / Arahkan kursor untuk kontrol profil)`}
+            className="relative w-11 h-11 rounded-2xl overflow-hidden border border-white/10 hover:border-indigo-500/50 hover:shadow-lg hover:shadow-indigo-500/25 transition-all duration-200 cursor-pointer bg-slate-900 group"
+          >
+            <img
+              src={user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.id}`}
+              alt={user.username}
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+            />
+            {/* Status dot */}
+            <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#0c0e14] ${currentStatus.bg}`} />
+          </button>
+
+          {/* Floating Quick Controls Modal */}
+          {showUserModal && (
+            <div
+              ref={userModalRef}
+              onMouseEnter={() => {
+                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+              }}
+              onMouseLeave={handleUserMouseLeave}
+              className="fixed left-[72px] bottom-3 w-64 bg-[#13161f]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-3 z-50 text-slate-200 animate-in fade-in zoom-in-95 duration-150 select-none"
+            >
+              {/* User Info Header */}
+              <div className="flex items-center space-x-3 pb-3 border-b border-white/5">
+                <div className="relative flex-shrink-0">
+                  <img
+                    src={user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.id}`}
+                    alt={user.username}
+                    className="w-10 h-10 rounded-xl object-cover border border-white/10"
+                  />
+                  <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#13161f] ${currentStatus.bg}`} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold text-white truncate">{user.username}</div>
+                  <div className="text-[11px] text-slate-400 font-mono">#{user.discriminator}</div>
+                </div>
+              </div>
+
+              {/* Status Quick Switch */}
+              <div className="py-2 border-b border-white/5 space-y-1">
+                <div className="px-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Status</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {statusOptions.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => updateStatus(opt.value)}
+                      className={`px-2 py-1 rounded-xl flex items-center space-x-1.5 text-[11px] font-medium transition-all cursor-pointer ${
+                        user.status === opt.value
+                          ? 'bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 font-bold'
+                          : 'hover:bg-white/5 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className={`w-2 h-2 rounded-full ${opt.color}`} />
+                      <span className="truncate">{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Voice Controls & Settings Bar */}
+              <div className="pt-2 flex items-center justify-between">
+                <div className="flex items-center space-x-1">
+                  {/* Mute Button */}
+                  <button
+                    onClick={toggleMute}
+                    title={isMuted ? 'Nyalakan Mikrofon' : 'Bisukan Mikrofon'}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                      isMuted
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-sm'
+                        : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+                    <span className="text-[11px]">{isMuted ? 'Muted' : 'Mute'}</span>
+                  </button>
+
+                  {/* Deafen Button */}
+                  <button
+                    onClick={toggleDeafen}
+                    title={isDeafened ? 'Nyalakan Suara' : 'Bisukan Suara (Deafen)'}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all cursor-pointer ${
+                      isDeafened
+                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-sm'
+                        : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <Headphones size={14} className={isDeafened ? 'text-rose-400' : ''} />
+                    <span className="text-[11px]">{isDeafened ? 'Deafened' : 'Deafen'}</span>
+                  </button>
+                </div>
+
+                {/* Settings Button */}
+                {onOpenUserSettings && (
+                  <button
+                    onClick={() => {
+                      setShowUserModal(false);
+                      onOpenUserSettings();
+                    }}
+                    title="Buka Pengaturan Akun"
+                    className="p-2 rounded-xl bg-white/5 hover:bg-indigo-600 text-slate-300 hover:text-white transition-all cursor-pointer flex items-center justify-center shadow-sm"
+                  >
+                    <Settings size={15} />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CONTEXT MENU FOR SERVER / FOLDER */}
       {contextMenu && (

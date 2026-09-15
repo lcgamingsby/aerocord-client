@@ -514,31 +514,6 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
             {/* SECURITY TAB */}
             {tab === 'security' && (
               <div className="space-y-6">
-                {/* Security Overview Card */}
-                <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-950/40 to-slate-900/60 border border-white/10 space-y-3">
-                  <div className="flex items-center space-x-2 text-indigo-400 font-bold text-xs uppercase tracking-wider">
-                    <ShieldCheck size={18} />
-                    <span>Perlindungan Keamanan Sistem & Database</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-                    <div className="p-3 rounded-xl bg-[#0c0e14]/80 border border-white/5">
-                      <div className="text-[10px] font-bold text-emerald-400 uppercase">SQL & NoSQL Guard</div>
-                      <div className="text-xs text-slate-200 font-semibold mt-0.5">Anti-Injection Aktif</div>
-                      <div className="text-[9px] text-slate-400 mt-1">Sanitasi query & parameter input otomatis</div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-[#0c0e14]/80 border border-white/5">
-                      <div className="text-[10px] font-bold text-indigo-400 uppercase">Brute-Force Shield</div>
-                      <div className="text-xs text-slate-200 font-semibold mt-0.5">Maks 5x Percobaan</div>
-                      <div className="text-[9px] text-slate-400 mt-1">Kunci akun 15 menit jika terdeteksi serangan</div>
-                    </div>
-                    <div className="p-3 rounded-xl bg-[#0c0e14]/80 border border-white/5">
-                      <div className="text-[10px] font-bold text-cyan-400 uppercase">Enkripsi Data</div>
-                      <div className="text-xs text-slate-200 font-semibold mt-0.5">Bcrypt & JWT</div>
-                      <div className="text-[9px] text-slate-400 mt-1">Salted hash password & WebRTC P2P</div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Two-Factor Authentication (2FA) */}
                 {!isGuestUser && (
                   <div className="p-5 rounded-2xl bg-[#0c0e14] border border-white/10 space-y-4">

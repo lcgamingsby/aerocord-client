@@ -254,6 +254,8 @@ const MainLayout: React.FC = () => {
         unreadDMCount={totalUnreadDMs}
         onSelectServer={handleSelectServer}
         onOpenCreateServer={() => setIsCreateServerOpen(true)}
+        isSidebarCollapsed={isSidebarCollapsed}
+        onOpenUserSettings={() => setIsUserSettingsOpen(true)}
       />
 
       {/* 2. Main Content Area */}
