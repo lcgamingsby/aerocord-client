@@ -1,14 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
-import { Mic, MicOff, Headphones, MonitorUp, PhoneOff, Volume2, Maximize2, Minimize2, X } from 'lucide-react';
+import { Mic, MicOff, Headphones, MonitorUp, PhoneOff, Volume2, Maximize2, Minimize2, X, Music, PanelLeftOpen } from 'lucide-react';
+import { SoundboardModal } from './SoundboardModal';
 
 interface VoiceChannelRoomProps {
   channelName: string;
+  isSidebarCollapsed?: boolean;
+  onToggleSidebar?: () => void;
 }
 
-export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ channelName }) => {
+export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ 
+  channelName,
+  isSidebarCollapsed = false,
+  onToggleSidebar
+}) => {
   const { user } = useAuth();
+  const [showSoundboard, setShowSoundboard] = useState<boolean>(false);
+  const isTouchDevice = typeof window !== 'undefined' && (
+    'ontouchstart' in window || 
+    navigator.maxTouchPoints > 0 || 
+    window.innerWidth < 768
+  );
   const {
     voiceParticipants,
     isMuted,
@@ -109,8 +122,27 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ channelName 
           <button onClick={toggleDeafen} title={isDeafened ? 'Undeafen' : 'Deafen'} className={`p-3 rounded-xl transition-all cursor-pointer ${isDeafened ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' : 'bg-slate-800 hover:bg-slate-700 text-white'}`}>
             <Headphones size={18} />
           </button>
-          <button onClick={toggleScreenShare} title={isScreenSharing ? 'Hentikan Share Screen' : 'Bagikan Layar'} className={`p-3 rounded-xl transition-all cursor-pointer ${isScreenSharing ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/25' : 'bg-slate-800 hover:bg-slate-700 text-white'}`}>
+          <button 
+            onClick={(e) => {
+              if (isTouchDevice) { e.preventDefault(); return; }
+              toggleScreenShare();
+            }} 
+            disabled={isTouchDevice}
+            title={isTouchDevice ? 'Share screen tidak didukung di perangkat mobile' : (isScreenSharing ? 'Hentikan Share Screen' : 'Bagikan Layar')} 
+            className={`p-3 rounded-xl transition-all ${
+              isTouchDevice
+                ? 'bg-slate-800/40 text-slate-600 opacity-25 cursor-not-allowed pointer-events-none'
+                : isScreenSharing ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 cursor-pointer' : 'bg-slate-800 hover:bg-slate-700 text-white cursor-pointer'
+            }`}
+          >
             <MonitorUp size={18} />
+          </button>
+          <button 
+            onClick={() => setShowSoundboard(true)} 
+            title="Buka Soundboard Voice" 
+            className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-indigo-300 transition-all cursor-pointer shadow-sm"
+          >
+            <Music size={18} />
           </button>
           <button onClick={leaveVoiceChannel} title="Keluar dari Voice Channel" className="p-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-lg shadow-rose-600/25 transition-transform hover:scale-105 cursor-pointer ml-2">
             <PhoneOff size={18} />
@@ -123,8 +155,24 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ channelName 
   return (
     <div className="flex-1 bg-[#0d0f14] flex flex-col h-full overflow-hidden select-none p-6 relative">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5">
+      <div 
+        onClick={(e) => {
+          if (e.target === e.currentTarget && onToggleSidebar && isSidebarCollapsed) {
+            onToggleSidebar();
+          }
+        }}
+        className="flex items-center justify-between mb-6 pb-4 border-b border-white/5"
+      >
         <div className="flex items-center space-x-3">
+          {onToggleSidebar && isSidebarCollapsed && (
+            <button
+              onClick={onToggleSidebar}
+              title="Buka Sidebar (Ctrl+B)"
+              className="p-1.5 rounded-xl transition-all cursor-pointer mr-1 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 shadow-sm"
+            >
+              <PanelLeftOpen size={16} />
+            </button>
+          )}
           <div className="p-2.5 rounded-2xl bg-emerald-500/10 text-emerald-400">
             <Volume2 size={24} />
           </div>
@@ -135,7 +183,6 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ channelName 
                 {voiceParticipants.length} Terhubung
               </span>
             </h2>
-            <p className="text-xs text-slate-400">WebRTC Encrypted Realtime Audio & Video Room</p>
           </div>
         </div>
       </div>
@@ -262,13 +309,28 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ channelName 
         </button>
 
         <button
-          onClick={toggleScreenShare}
-          title={isScreenSharing ? 'Hentikan Share Screen' : 'Bagikan Layar (Share Screen)'}
-          className={`p-3 rounded-xl transition-all cursor-pointer ${
-            isScreenSharing ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/25' : 'bg-slate-800 hover:bg-slate-700 text-white'
+          onClick={(e) => {
+            if (isTouchDevice) { e.preventDefault(); return; }
+            toggleScreenShare();
+          }}
+          disabled={isTouchDevice}
+          title={isTouchDevice ? 'Share screen tidak didukung di perangkat mobile' : (isScreenSharing ? 'Hentikan Share Screen' : 'Bagikan Layar (Share Screen)')}
+          className={`p-3 rounded-xl transition-all ${
+            isTouchDevice
+              ? 'bg-slate-800/40 text-slate-600 opacity-25 cursor-not-allowed pointer-events-none'
+              : isScreenSharing ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 cursor-pointer' : 'bg-slate-800 hover:bg-slate-700 text-white cursor-pointer'
           }`}
         >
           <MonitorUp size={18} />
+        </button>
+
+        {/* Soundboard Launcher in Voice Room */}
+        <button
+          onClick={() => setShowSoundboard(true)}
+          title="Buka Soundboard Voice"
+          className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-indigo-300 transition-all cursor-pointer shadow-sm hover:shadow-indigo-500/20"
+        >
+          <Music size={18} />
         </button>
 
         <button
@@ -279,11 +341,9 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ channelName 
           <PhoneOff size={18} />
         </button>
       </div>
+
+      {/* Interactive Voice Soundboard Modal */}
+      <SoundboardModal isOpen={showSoundboard} onClose={() => setShowSoundboard(false)} />
     </div>
   );
 };
-
-
-interface VoiceChannelRoomProps {
-  channelName: string;
-}

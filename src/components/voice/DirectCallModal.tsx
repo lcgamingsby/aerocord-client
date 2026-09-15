@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useVoice } from '../../context/VoiceContext';
-import { Phone, PhoneOff, Mic, MicOff, Headphones, MonitorUp, Maximize2, Minimize2 } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Headphones, MonitorUp, Maximize2, Minimize2, Music } from 'lucide-react';
+import { SoundboardModal } from './SoundboardModal';
 
 export const DirectCallModal: React.FC = () => {
   const {
@@ -21,6 +22,13 @@ export const DirectCallModal: React.FC = () => {
 
   const [callDuration, setCallDuration] = useState<number>(0);
   const [isScreenShareExpanded, setIsScreenShareExpanded] = useState<boolean>(false);
+  const [showSoundboard, setShowSoundboard] = useState<boolean>(false);
+
+  const isTouchDevice = typeof window !== 'undefined' && (
+    'ontouchstart' in window || 
+    navigator.maxTouchPoints > 0 || 
+    window.innerWidth < 768
+  );
 
   useEffect(() => {
     let timer: number | null = null;
@@ -163,70 +171,116 @@ export const DirectCallModal: React.FC = () => {
             <button onClick={toggleDeafen} title={isDeafened ? 'Undeafen' : 'Deafen'} className={`p-3 rounded-xl transition-all cursor-pointer ${isDeafened ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40' : 'bg-slate-800 hover:bg-slate-700 text-white'}`}>
               <Headphones size={18} />
             </button>
-            <button onClick={toggleScreenShare} title={isScreenSharing ? 'Hentikan Share Screen' : 'Bagikan Layar'} className={`p-3 rounded-xl transition-all cursor-pointer ${isScreenSharing ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/25' : 'bg-slate-800 hover:bg-slate-700 text-white'}`}>
+            <button 
+              onClick={(e) => {
+                if (isTouchDevice) { e.preventDefault(); return; }
+                toggleScreenShare();
+              }}
+              disabled={isTouchDevice}
+              title={isTouchDevice ? 'Share screen tidak didukung di perangkat mobile' : (isScreenSharing ? 'Hentikan Share Screen' : 'Bagikan Layar')} 
+              className={`p-3 rounded-xl transition-all ${
+                isTouchDevice 
+                  ? 'bg-slate-800/40 text-slate-600 opacity-25 cursor-not-allowed pointer-events-none'
+                  : isScreenSharing ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/25 cursor-pointer' : 'bg-slate-800 hover:bg-slate-700 text-white cursor-pointer'
+              }`}
+            >
               <MonitorUp size={18} />
+            </button>
+            <button
+              onClick={() => setShowSoundboard(true)}
+              title="Buka Soundboard Voice"
+              className="p-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-indigo-300 transition-all cursor-pointer shadow-sm"
+            >
+              <Music size={18} />
             </button>
             <button onClick={endCall} title="Akhiri Panggilan" className="p-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl shadow-lg shadow-rose-600/25 transition-transform hover:scale-105 cursor-pointer ml-2">
               <PhoneOff size={18} />
             </button>
           </div>
+
+          {/* Voice Soundboard Modal */}
+          <SoundboardModal isOpen={showSoundboard} onClose={() => setShowSoundboard(false)} />
         </div>
       );
     }
 
     // ─── Compact Floating Call Dock ───
     return (
-      <div className="fixed top-6 right-6 z-50 bg-[#13161f]/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-emerald-500/40 animate-in slide-in-from-top-4 duration-300 overflow-hidden" style={{ maxWidth: '380px' }}>
-        {/* Screen share thumbnail preview */}
-        {hasScreenShare && (
-          <div className="relative cursor-pointer group" onClick={() => setIsScreenShareExpanded(true)} title="Klik untuk memperbesar screen share">
-            <video
-              ref={(el) => {
-                const stream = remoteScreenStream || screenStream;
-                if (el && stream && el.srcObject !== stream) el.srcObject = stream;
-              }}
-              autoPlay playsInline muted
-              className="w-full h-[140px] object-cover"
-            />
-            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <div className="flex items-center space-x-2 text-white text-xs font-bold">
-                <Maximize2 size={16} />
-                <span>Klik untuk Fullscreen</span>
+      <>
+        <div className="fixed top-6 right-6 z-50 bg-[#13161f]/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-emerald-500/40 animate-in slide-in-from-top-4 duration-300 overflow-hidden" style={{ maxWidth: '380px' }}>
+          {/* Screen share thumbnail preview */}
+          {hasScreenShare && (
+            <div className="relative cursor-pointer group" onClick={() => setIsScreenShareExpanded(true)} title="Klik untuk memperbesar screen share">
+              <video
+                ref={(el) => {
+                  const stream = remoteScreenStream || screenStream;
+                  if (el && stream && el.srcObject !== stream) el.srcObject = stream;
+                }}
+                autoPlay playsInline muted
+                className="w-full h-[140px] object-cover"
+              />
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <div className="flex items-center space-x-2 text-white text-xs font-bold">
+                  <Maximize2 size={16} />
+                  <span>Klik untuk Fullscreen</span>
+                </div>
+              </div>
+              <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/70 backdrop-blur-sm rounded-lg text-[10px] font-semibold text-white flex items-center space-x-1.5 border border-white/10">
+                <MonitorUp size={11} className="text-emerald-400" />
+                <span>{remoteScreenStream ? target.username : 'Anda'}</span>
               </div>
             </div>
-            <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/70 backdrop-blur-sm rounded-lg text-[10px] font-semibold text-white flex items-center space-x-1.5 border border-white/10">
-              <MonitorUp size={11} className="text-emerald-400" />
-              <span>{remoteScreenStream ? target.username : 'Anda'}</span>
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Call info & controls */}
-        <div className="p-4 flex items-center space-x-4">
-          <div className="relative flex-shrink-0">
-            <img src={target.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${target.id}`} alt={target.username} className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-500" />
-            <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-[#13161f]" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center space-x-2">
-              <span className="font-bold text-white text-xs">{target.username}</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono font-bold">{formatTime(callDuration)}</span>
+          {/* Call info & controls */}
+          <div className="p-4 flex items-center space-x-4">
+            <div className="relative flex-shrink-0">
+              <img src={target.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${target.id}`} alt={target.username} className="w-12 h-12 rounded-2xl object-cover border-2 border-emerald-500" />
+              <div className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-[#13161f]" />
             </div>
-            <div className="text-[10px] text-emerald-400 font-medium">Panggilan Langsung Terhubung</div>
-          </div>
-          <div className="flex items-center space-x-1.5 ml-auto flex-shrink-0">
-            <button onClick={toggleMute} title={isMuted ? 'Unmute' : 'Mute'} className={`p-2 rounded-xl transition-colors cursor-pointer ${isMuted ? 'bg-rose-500/20 text-rose-400' : 'bg-white/5 hover:bg-white/10 text-white'}`}>
-              {isMuted ? <MicOff size={15} /> : <Mic size={15} />}
-            </button>
-            <button onClick={toggleScreenShare} title="Share Screen" className={`p-2 rounded-xl transition-colors cursor-pointer ${isScreenSharing ? 'bg-emerald-600 text-white' : 'bg-white/5 hover:bg-white/10 text-white'}`}>
-              <MonitorUp size={15} />
-            </button>
-            <button onClick={endCall} title="Akhiri Panggilan" className="p-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-colors shadow-lg cursor-pointer">
-              <PhoneOff size={15} />
-            </button>
+            <div className="min-w-0">
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-white text-xs">{target.username}</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 font-mono font-bold">{formatTime(callDuration)}</span>
+              </div>
+              <div className="text-[10px] text-emerald-400 font-medium">Panggilan Langsung Terhubung</div>
+            </div>
+            <div className="flex items-center space-x-1.5 ml-auto flex-shrink-0">
+              <button onClick={toggleMute} title={isMuted ? 'Unmute' : 'Mute'} className={`p-2 rounded-xl transition-colors cursor-pointer ${isMuted ? 'bg-rose-500/20 text-rose-400' : 'bg-white/5 hover:bg-white/10 text-white'}`}>
+                {isMuted ? <MicOff size={15} /> : <Mic size={15} />}
+              </button>
+              <button 
+                onClick={(e) => {
+                  if (isTouchDevice) { e.preventDefault(); return; }
+                  toggleScreenShare();
+                }} 
+                disabled={isTouchDevice}
+                title={isTouchDevice ? 'Share screen tidak didukung di perangkat mobile' : 'Share Screen'} 
+                className={`p-2 rounded-xl transition-colors ${
+                  isTouchDevice 
+                    ? 'opacity-25 pointer-events-none cursor-not-allowed text-slate-500 bg-white/5' 
+                    : isScreenSharing ? 'bg-emerald-600 text-white cursor-pointer' : 'bg-white/5 hover:bg-white/10 text-white cursor-pointer'
+                }`}
+              >
+                <MonitorUp size={15} />
+              </button>
+              <button
+                onClick={() => setShowSoundboard(true)}
+                title="Buka Soundboard Voice"
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-indigo-400 hover:text-indigo-300 transition-colors cursor-pointer"
+              >
+                <Music size={15} />
+              </button>
+              <button onClick={endCall} title="Akhiri Panggilan" className="p-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-colors shadow-lg cursor-pointer">
+                <PhoneOff size={15} />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+
+        {/* Voice Soundboard Modal */}
+        <SoundboardModal isOpen={showSoundboard} onClose={() => setShowSoundboard(false)} />
+      </>
     );
   }
 

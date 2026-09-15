@@ -294,7 +294,11 @@ const MainLayout: React.FC = () => {
 
           {/* Chat or Voice Room */}
           {activeChannel?.type === 'voice' && currentVoiceChannel === activeChannel.id ? (
-            <VoiceChannelRoom channelName={activeChannel.name} />
+            <VoiceChannelRoom 
+              channelName={activeChannel.name}
+              isSidebarCollapsed={isSidebarCollapsed}
+              onToggleSidebar={toggleSidebar}
+            />
           ) : (
             <ChatArea
               channel={activeChannel}

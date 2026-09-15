@@ -111,7 +111,14 @@ export const DMSidebar: React.FC<DMSidebarProps> = ({
       </div>
 
       {/* Direct Messages List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-1">
+      <div 
+        onClick={(e) => {
+          if (e.target === e.currentTarget && onToggleCollapse) {
+            onToggleCollapse();
+          }
+        }}
+        className="flex-1 overflow-y-auto p-3 space-y-1"
+      >
         <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
           Direct Messages ({conversations.length})
         </div>
@@ -157,6 +164,18 @@ export const DMSidebar: React.FC<DMSidebarProps> = ({
             </button>
           );
         })}
+
+        {/* Clickable Empty Space at Bottom */}
+        <div 
+          onClick={(e) => {
+            if (onToggleCollapse) {
+              e.stopPropagation();
+              onToggleCollapse();
+            }
+          }}
+          className="h-28 w-full cursor-pointer" 
+          title="Klik area kosong untuk menutup sidebar" 
+        />
       </div>
 
       {/* Active Voice & User Profile Dock */}

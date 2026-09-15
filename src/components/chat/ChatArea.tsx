@@ -45,11 +45,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [inspectUser, setInspectUser] = useState<User | null>(null);
 
-  // New Features: Search, Pinned Messages, Soundboard
+  // New Features: Search, Pinned Messages
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showPinned, setShowPinned] = useState<boolean>(false);
-  const [showSoundboard, setShowSoundboard] = useState<boolean>(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activeId = channel ? channel.id : (conversation ? conversation.id : null);
@@ -151,18 +150,17 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const pinnedMessages = messages.filter(m => m.isPinned);
 
-  const soundboardSounds = [
-    { name: 'Voice Join 📢', play: () => soundEffects.playJoinVoiceSound() },
-    { name: 'Voice Leave 🚪', play: () => soundEffects.playLeaveVoiceSound() },
-    { name: 'Message Pop 💬', play: () => soundEffects.playMessagePop() },
-    { name: 'Mute Click 🔘', play: () => soundEffects.playMuteSound() },
-    { name: 'Unmute Click 🔔', play: () => soundEffects.playUnmuteSound() }
-  ];
-
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0d0f14] overflow-hidden select-text relative">
       {/* Top Clean Minimal Header */}
-      <div className="h-14 px-4 sm:px-6 border-b border-white/5 flex items-center justify-between bg-[#11131a]/80 backdrop-blur-md z-20 flex-shrink-0">
+      <div 
+        onClick={(e) => {
+          if (e.target === e.currentTarget && onToggleSidebar && isSidebarCollapsed) {
+            onToggleSidebar();
+          }
+        }}
+        className="h-14 px-4 sm:px-6 border-b border-white/5 flex items-center justify-between bg-[#11131a]/80 backdrop-blur-md z-20 flex-shrink-0"
+      >
         <div className="flex items-center space-x-2.5 min-w-0">
           {/* Sidebar Open Button (Only visible when sidebar is collapsed) */}
           {onToggleSidebar && isSidebarCollapsed && (
@@ -246,17 +244,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             <Search size={17} />
           </button>
 
-          {/* Soundboard Launcher */}
-          <button
-            onClick={() => setShowSoundboard(!showSoundboard)}
-            title="Soundboard Efek Suara"
-            className={`p-2 rounded-xl transition-colors cursor-pointer ${
-              showSoundboard ? 'text-indigo-400 bg-indigo-500/10' : 'hover:text-slate-200 hover:bg-white/5'
-            }`}
-          >
-            <Music size={17} />
-          </button>
-
           {/* Pinned Messages */}
           <button
             onClick={() => setShowPinned(!showPinned)}
@@ -327,38 +314,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           >
             <X size={14} />
           </button>
-        </div>
-      )}
-
-      {/* Soundboard Popover */}
-      {showSoundboard && (
-        <div className="absolute top-16 right-6 z-40 w-64 bg-[#13161f] border border-white/10 rounded-2xl shadow-2xl p-3 animate-in zoom-in-95 duration-100">
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 flex items-center space-x-1.5">
-              <Music size={13} />
-              <span>Soundboard</span>
-            </span>
-            <button
-              onClick={() => setShowSoundboard(false)}
-              className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
-            >
-              <X size={13} />
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {soundboardSounds.map((snd, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  snd.play();
-                  showInfo('Sound Played', snd.name);
-                }}
-                className="p-2.5 bg-[#0c0e14] hover:bg-indigo-600/30 border border-white/5 hover:border-indigo-500/50 rounded-xl text-xs font-semibold text-slate-200 transition-all text-center cursor-pointer"
-              >
-                {snd.name}
-              </button>
-            ))}
-          </div>
         </div>
       )}
 

@@ -26,6 +26,7 @@ interface VoiceContextType {
   acceptCall: () => Promise<void>;
   rejectCall: () => void;
   endCall: () => void;
+  playSoundboard: (soundId: string, soundName?: string) => void;
 }
 
 const VoiceContext = createContext<VoiceContextType | undefined>(undefined);
@@ -517,6 +518,12 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       leaveVoiceChannel();
     });
 
+    // Soundboard event broadcast listener
+    socket.on('voice_soundboard_played', (data: { userId: string; soundId: string; soundName?: string }) => {
+      if (isDeafenedRef.current) return;
+      soundEffects.playSoundboard(data.soundId);
+    });
+
     return () => {
       socket.off('voice_channel_state');
       socket.off('voice_peer_joined');
@@ -527,6 +534,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       socket.off('incoming_call');
       socket.off('call_answered');
       socket.off('call_ended');
+      socket.off('voice_soundboard_played');
     };
   }, [socket, user, leaveVoiceChannel]);
 
@@ -723,6 +731,16 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     leaveVoiceChannel();
   };
 
+  const playSoundboard = (soundId: string, soundName?: string) => {
+    const activeChan = currentVoiceChannelRef.current || (activeCallRef.current?.conversationId ? activeCallRef.current.conversationId : null);
+    if (!activeChan || !socket) return;
+    socket.emit('voice_soundboard', {
+      channelId: activeChan,
+      soundId,
+      soundName: soundName || soundId
+    });
+  };
+
   return (
     <VoiceContext.Provider
       value={{
@@ -746,7 +764,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         startDirectCall,
         acceptCall,
         rejectCall,
-        endCall
+        endCall,
+        playSoundboard
       }}
     >
       {children}

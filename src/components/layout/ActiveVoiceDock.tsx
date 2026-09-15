@@ -9,7 +9,11 @@ interface ActiveVoiceDockProps {
 export const ActiveVoiceDock: React.FC<ActiveVoiceDockProps> = ({ channelName }) => {
   const { currentVoiceChannel, leaveVoiceChannel, toggleScreenShare, isScreenSharing } = useVoice();
 
-  if (!currentVoiceChannel) return null;
+  const isTouchDevice = typeof window !== 'undefined' && (
+    'ontouchstart' in window || 
+    navigator.maxTouchPoints > 0 || 
+    window.innerWidth < 768
+  );
 
   return (
     <div className="px-3.5 py-2.5 bg-emerald-950/30 border-b border-emerald-500/20 flex items-center justify-between animate-in slide-in-from-bottom duration-200">
@@ -27,10 +31,21 @@ export const ActiveVoiceDock: React.FC<ActiveVoiceDockProps> = ({ channelName })
 
       <div className="flex items-center space-x-1">
         <button
-          onClick={toggleScreenShare}
-          title={isScreenSharing ? 'Hentikan Share Screen' : 'Bagikan Layar'}
-          className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
-            isScreenSharing ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-400 hover:text-white hover:bg-white/5'
+          onClick={(e) => {
+            if (isTouchDevice) {
+              e.preventDefault();
+              return;
+            }
+            toggleScreenShare();
+          }}
+          disabled={isTouchDevice}
+          title={isTouchDevice ? 'Share screen tidak didukung di perangkat mobile' : (isScreenSharing ? 'Hentikan Share Screen' : 'Bagikan Layar')}
+          className={`p-1.5 rounded-xl transition-colors ${
+            isTouchDevice 
+              ? 'opacity-20 cursor-not-allowed pointer-events-none text-slate-500' 
+              : isScreenSharing 
+                ? 'text-emerald-400 bg-emerald-500/20 cursor-pointer' 
+                : 'text-slate-400 hover:text-white hover:bg-white/5 cursor-pointer'
           }`}
         >
           <MonitorUp size={16} />

@@ -4,7 +4,7 @@ import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { useSocket } from '../../context/SocketContext';
-import { Hash, Volume2, Plus, ChevronDown, ChevronRight, Settings, UserPlus, MicOff, Radio, BellOff, FolderPlus, PanelLeftClose } from 'lucide-react';
+import { Hash, Volume2, Plus, ChevronDown, ChevronRight, Settings, UserPlus, MicOff, Headphones, MonitorUp, Radio, BellOff, FolderPlus, PanelLeftClose } from 'lucide-react';
 import { UserDock } from './UserDock';
 import { ActiveVoiceDock } from './ActiveVoiceDock';
 import { ChannelContextMenu } from '../chat/ChannelContextMenu';
@@ -311,7 +311,14 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
         )}
 
       {/* Channel Categories & Groups */}
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+      <div 
+        onClick={(e) => {
+          if (e.target === e.currentTarget && onToggleCollapse) {
+            onToggleCollapse();
+          }
+        }}
+        className="flex-1 overflow-y-auto px-3 py-4 space-y-4"
+      >
         {server.categories.map((category) => {
           const categoryChannels = server.channels.filter(c => c.categoryId === category.id);
           const isCollapsed = collapsedCategories[category.id] || false;
@@ -336,24 +343,31 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                   >
                     <Plus size={13} />
                   </button>
+                  <button
+                    onClick={() => onOpenCreateChannel('voice', category.id)}
+                    title={`Tambah Voice Channel di ${category.name}`}
+                    className="p-1 rounded-md hover:bg-white/10 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <Volume2 size={13} />
+                  </button>
                 </div>
               </div>
 
-              {/* Group Channels List (if not collapsed) */}
+              {/* Channel Items List */}
               {!isCollapsed && (
-                <div className="space-y-0.5 pl-1">
+                <div className="space-y-0.5">
                   {categoryChannels.map((channel) => {
                     const isActive = activeChannelId === channel.id;
+                    const isVoice = channel.type === 'voice';
                     const isMuted = isChannelMuted(channel.id);
                     const unread = unreadCounts[channel.id] || 0;
-                    const connectedUsers = channel.type === 'voice' ? getConnectedVoiceUsers(channel.id) : [];
-                    const isInThisVoice = channel.type === 'voice' && currentVoiceChannel === channel.id;
+                    const connectedVoiceUsers = isVoice ? getConnectedVoiceUsers(channel.id) : [];
 
                     return (
-                      <div key={channel.id} className="flex flex-col">
-                        <button
+                      <div key={channel.id} className="space-y-0.5">
+                        <div
                           onClick={() => {
-                            if (channel.type === 'voice') {
+                            if (isVoice) {
                               joinVoiceChannel(channel.id);
                             }
                             onSelectChannel(channel);
@@ -365,68 +379,64 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                               position: { x: e.clientX, y: e.clientY }
                             });
                           }}
-                          title={`Klik kanan untuk opsi channel #${channel.name}`}
-                          className={`w-full flex items-center px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer text-left group relative ${
-                            isInThisVoice
-                              ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/30'
-                              : isActive
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl transition-all cursor-pointer group text-xs font-semibold select-none ${
+                            isActive
                               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                              : isMuted
+                              ? 'text-slate-500 hover:bg-white/[0.04] hover:text-slate-400'
                               : 'text-slate-400 hover:bg-white/[0.04] hover:text-slate-100'
                           }`}
                         >
-                          {channel.type === 'voice' ? (
-                            <Volume2 size={15} className={`mr-2 flex-shrink-0 ${isInThisVoice ? 'text-emerald-400 animate-pulse' : 'text-slate-500 group-hover:text-slate-300'}`} />
-                          ) : (
-                            <Hash size={15} className={`mr-2 flex-shrink-0 ${isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'}`} />
-                          )}
+                          <div className="flex items-center space-x-2 truncate">
+                            {isVoice ? (
+                              <Volume2 size={16} className={isActive ? 'text-white' : 'text-emerald-400'} />
+                            ) : (
+                              <Hash size={16} className={isActive ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'} />
+                            )}
+                            <span className="truncate">{channel.name}</span>
+                          </div>
 
-                          <span className="truncate flex-1">{channel.name}</span>
+                          <div className="flex items-center space-x-1 flex-shrink-0">
+                            {isMuted && (
+                              <span title="Channel dibisukan">
+                                <BellOff size={13} className="text-slate-500" />
+                              </span>
+                            )}
+                            {unread > 0 && !isActive && (
+                              <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow animate-pulse">
+                                {unread}
+                              </span>
+                            )}
+                            {isVoice && connectedVoiceUsers.length > 0 && (
+                              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded-md border border-emerald-500/20">
+                                {connectedVoiceUsers.length}
+                              </span>
+                            )}
+                          </div>
+                        </div>
 
-                          {/* Unread Message Badge */}
-                          {unread > 0 && !isActive && (
-                            <span className="min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center shadow-md animate-pulse ml-1.5 flex-shrink-0">
-                              {unread}
-                            </span>
-                          )}
-
-                          {/* Muted Icon */}
-                          {isMuted && (
-                            <BellOff size={13} className="text-amber-400 ml-1.5 flex-shrink-0" />
-                          )}
-
-                          {connectedUsers.length > 0 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold ml-1">
-                              {connectedUsers.length}
-                            </span>
-                          )}
-                        </button>
-
-                        {/* Connected Voice Members */}
-                        {channel.type === 'voice' && connectedUsers.length > 0 && (
-                          <div className="pl-6 py-1 space-y-1">
-                            {connectedUsers.map((participant) => {
-                              const pUser = participant.user;
-                              const isMe = participant.userId === user?.id;
-                              const isTalking = participant.isSpeaking;
-
+                        {/* Connected Voice Channel Participants List */}
+                        {isVoice && connectedVoiceUsers.length > 0 && (
+                          <div className="pl-6 pr-2 py-1 space-y-1 bg-black/20 rounded-xl mb-1">
+                            {connectedVoiceUsers.map(p => {
+                              const pUser = p.user;
                               return (
-                                <div
-                                  key={participant.userId}
-                                  className="flex items-center space-x-2 py-0.5 px-2 rounded-lg bg-white/[0.02] text-xs text-slate-300"
-                                >
-                                  <img
-                                    src={pUser?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${participant.userId}`}
-                                    alt={pUser?.username || 'User'}
-                                    className={`w-5 h-5 rounded-full object-cover ${
-                                      isTalking ? 'ring-2 ring-emerald-400' : ''
-                                    }`}
-                                  />
-                                  <span className={`truncate flex-1 text-[11px] ${isMe ? 'font-bold text-emerald-400' : ''}`}>
-                                    {pUser?.username || 'User'}
-                                  </span>
-                                  {participant.isMuted && (
-                                    <MicOff size={11} className="text-rose-400 flex-shrink-0" />
-                                  )}
+                                <div key={p.userId} className="flex items-center justify-between text-[11px] text-slate-300 py-0.5">
+                                  <div className="flex items-center space-x-1.5 truncate">
+                                    <div className="relative">
+                                      <img
+                                        src={pUser?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${p.userId}`}
+                                        alt={pUser?.username || 'User'}
+                                        className={`w-4 h-4 rounded-full object-cover ${p.isSpeaking ? 'ring-2 ring-emerald-500' : ''}`}
+                                      />
+                                    </div>
+                                    <span className="truncate text-[10px]">{pUser?.username || 'User'}</span>
+                                  </div>
+                                  <div className="flex items-center space-x-1 text-slate-500">
+                                    {p.isMuted && <MicOff size={11} className="text-rose-400" />}
+                                    {p.isDeafened && <Headphones size={11} className="text-rose-400" />}
+                                    {p.isScreenSharing && <MonitorUp size={11} className="text-emerald-400" />}
+                                  </div>
                                 </div>
                               );
                             })}
