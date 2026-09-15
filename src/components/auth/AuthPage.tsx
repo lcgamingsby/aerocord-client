@@ -223,11 +223,8 @@ export const AuthPage: React.FC = () => {
               <div>
                 <h1 className="text-xl font-black tracking-tight text-white flex items-center space-x-2">
                   <span>AeroCord</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-semibold border border-indigo-500/30">
-                    Minimalist
-                  </span>
                 </h1>
-                <p className="text-xs text-slate-400">Next-Gen Realtime Voice & Chat Platform</p>
+                <p className="text-xs text-slate-400">Light Voice & Chat Platform</p>
               </div>
             </div>
 
