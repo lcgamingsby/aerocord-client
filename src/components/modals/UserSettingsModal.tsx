@@ -462,7 +462,7 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
                     type="text"
                     value={customStatus}
                     onChange={(e) => setCustomStatus(e.target.value)}
-                    placeholder="misal: 🚀 Sedang coding AeroCord"
+                    placeholder="contoh: Sedang Tidur"
                     className="w-full px-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border border-white/10 focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
