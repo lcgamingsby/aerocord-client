@@ -69,9 +69,15 @@ export const DMSidebar: React.FC<DMSidebarProps> = ({
   return (
     <div
       ref={sidebarRef}
-      style={{ width: isCollapsed ? 0 : `${sidebarWidth}px` }}
-      className={`bg-[#11131a] flex flex-col h-full border-r border-white/5 flex-shrink-0 select-none relative group/sidebar transition-all duration-300 ease-in-out ${
-        isCollapsed ? 'min-w-0 max-w-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden border-none' : 'opacity-100 translate-x-0'
+      style={{ 
+        width: isCollapsed ? 0 : `${sidebarWidth}px`,
+        minWidth: isCollapsed ? 0 : '240px',
+        maxWidth: isCollapsed ? 0 : `${sidebarWidth}px`
+      }}
+      className={`bg-[#11131a] flex flex-col h-full border-r border-white/5 flex-shrink-0 select-none relative group/sidebar transition-all duration-300 ease-in-out z-20 ${
+        isCollapsed 
+          ? 'w-0 min-w-0 max-w-0 opacity-0 -translate-x-4 pointer-events-none overflow-hidden border-none' 
+          : 'opacity-100 translate-x-0'
       }`}
     >
       {/* Friends Hub Button Header */}

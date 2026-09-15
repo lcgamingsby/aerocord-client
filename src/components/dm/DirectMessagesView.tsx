@@ -62,10 +62,19 @@ export const DirectMessagesView: React.FC<DirectMessagesViewProps> = ({
 
   return (
     <div
-      className="flex-1 flex h-full select-none overflow-hidden bg-[#0d0f14]"
+      className="flex-1 flex h-full select-none overflow-hidden bg-[#0d0f14] relative"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* Mobile Backdrop when sidebar is open */}
+      {!isSidebarCollapsed && onToggleSidebar && (
+        <div
+          onClick={onToggleSidebar}
+          className="md:hidden fixed inset-0 bg-black/50 backdrop-blur-[2px] z-10 transition-opacity animate-in fade-in duration-200 cursor-pointer"
+          aria-label="Tutup sidebar"
+        />
+      )}
+
       {/* 1. Left Resizable DM Sidebar */}
       <DMSidebar
         conversations={conversations}

@@ -9,6 +9,8 @@ interface ActiveVoiceDockProps {
 export const ActiveVoiceDock: React.FC<ActiveVoiceDockProps> = ({ channelName }) => {
   const { currentVoiceChannel, leaveVoiceChannel, toggleScreenShare, isScreenSharing } = useVoice();
 
+  if (!currentVoiceChannel) return null;
+
   const isTouchDevice = typeof window !== 'undefined' && (
     'ontouchstart' in window || 
     navigator.maxTouchPoints > 0 || 

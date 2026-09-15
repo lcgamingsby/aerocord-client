@@ -271,7 +271,16 @@ const MainLayout: React.FC = () => {
         />
       ) : activeServer ? (
         // Server Mode
-        <div className="flex-1 flex h-full min-w-0 overflow-hidden">
+        <div className="flex-1 flex h-full min-w-0 overflow-hidden relative">
+          {/* Mobile backdrop when sidebar is open */}
+          {!isSidebarCollapsed && (
+            <div 
+              onClick={toggleSidebar} 
+              className="md:hidden fixed inset-0 bg-black/50 backdrop-blur-[2px] z-10 transition-opacity animate-in fade-in duration-200 cursor-pointer"
+              aria-label="Tutup sidebar"
+            />
+          )}
+
           {/* Channel Sidebar */}
           <ChannelSidebar
             server={activeServer}
