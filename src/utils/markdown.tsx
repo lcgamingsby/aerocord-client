@@ -106,9 +106,17 @@ const parseInlineMarkdown = (text: string): React.ReactNode => {
             </a>
           );
         } else if (p.type === 'mention') {
+          const isBroadcast = content === '@everyone' || content === '@here';
           parts.push(
-            <span key={`m-${keyIdx++}`} className="px-1 py-0.5 rounded bg-[#5865f2]/20 text-[#c9cdfb] font-medium hover:bg-[#5865f2]/40 transition-colors cursor-pointer">
-              {content}
+            <span
+              key={`m-${keyIdx++}`}
+              className={`px-1.5 py-0.5 rounded-md font-semibold text-xs transition-colors inline-flex items-center space-x-0.5 cursor-pointer ${
+                isBroadcast
+                  ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30'
+                  : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/35 hover:text-white'
+              }`}
+            >
+              <span>{content}</span>
             </span>
           );
         }

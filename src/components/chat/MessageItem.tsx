@@ -163,12 +163,24 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     );
   };
 
+  const isMentioned = Boolean(
+    currentUser && message.content && (
+      message.content.includes(`@${currentUser.username}`) ||
+      message.content.includes('@everyone') ||
+      message.content.includes('@here')
+    )
+  );
+
   return (
     <div
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className={`group relative flex px-4 py-1.5 hover:bg-[#2e3035]/60 transition-colors duration-100 ${
-        isEditing ? 'bg-[#2e3035]/90' : ''
+      className={`group relative flex px-4 py-1.5 transition-colors duration-100 ${
+        isMentioned
+          ? 'bg-amber-500/[0.08] hover:bg-amber-500/[0.12] border-l-2 border-amber-500'
+          : isEditing
+          ? 'bg-[#2e3035]/90'
+          : 'hover:bg-[#2e3035]/60'
       }`}
     >
       {/* Reply Reference Preview if any */}

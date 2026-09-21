@@ -411,6 +411,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       <MessageInput
         channelName={displayName}
         isDM={!!conversation}
+        members={server?.members}
+        roles={server?.roles}
         replyingTo={replyingTo}
         onCancelReply={() => setReplyingTo(null)}
         onSendMessage={(content, attachments, stickerUrl, replyToId, poll) => {

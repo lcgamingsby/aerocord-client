@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { PlusCircle, Smile, Sparkles, X, Image as ImageIcon, Send, Loader2, File as FileIcon, FileText, Film, Music, FileArchive, Paperclip, ShieldAlert, Mic, MicOff, Square, BarChart2 } from 'lucide-react';
-import { Message, Poll } from '../../types';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { PlusCircle, Smile, Sparkles, X, Image as ImageIcon, Send, Loader2, File as FileIcon, FileText, Film, Music, FileArchive, Paperclip, ShieldAlert, Mic, MicOff, Square, BarChart2, AtSign, Users } from 'lucide-react';
+import { Message, Poll, ServerMember, Role } from '../../types';
 import { EmojiPicker } from './EmojiPicker';
 import { StickerPicker } from './StickerPicker';
 import { CreatePollModal } from '../modals/CreatePollModal';
@@ -11,6 +11,8 @@ import { apiUrl } from '../../config/api';
 interface MessageInputProps {
   channelName: string;
   isDM?: boolean;
+  members?: ServerMember[];
+  roles?: Role[];
   replyingTo: Message | null;
   onCancelReply: () => void;
   onSendMessage: (content: string, attachments?: any[], stickerUrl?: string, replyToId?: string, poll?: Poll) => void;
@@ -21,6 +23,8 @@ interface MessageInputProps {
 export const MessageInput: React.FC<MessageInputProps> = ({
   channelName,
   isDM,
+  members,
+  roles,
   replyingTo,
   onCancelReply,
   onSendMessage,
@@ -36,6 +40,12 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Mention Autocomplete States (Server Chat Only)
+  const [showMentionPopup, setShowMentionPopup] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [selectedMentionIdx, setSelectedMentionIdx] = useState(0);
+
   // Voice Note Recording States
   const [isRecording, setIsRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -49,6 +59,67 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
   const stickerRef = useRef<HTMLDivElement>(null);
+  const mentionPopupRef = useRef<HTMLDivElement>(null);
+
+  // Filtered mentions for server chat
+  const mentionList = useMemo(() => {
+    if (isDM || !members || members.length === 0 || !showMentionPopup) return [];
+    const items: Array<{
+      type: 'special' | 'member';
+      id: string;
+      name: string;
+      tag: string;
+      description?: string;
+      avatar?: string;
+      color?: string;
+      discriminator?: string;
+    }> = [];
+
+    // 1. Special mentions
+    if ('everyone'.includes(mentionQuery)) {
+      items.push({
+        type: 'special',
+        id: 'everyone',
+        name: 'everyone',
+        tag: '@everyone',
+        description: 'Notifikasi semua anggota server'
+      });
+    }
+    if ('here'.includes(mentionQuery)) {
+      items.push({
+        type: 'special',
+        id: 'here',
+        name: 'here',
+        tag: '@here',
+        description: 'Notifikasi anggota yang sedang online'
+      });
+    }
+
+    // 2. Member mentions
+    members.forEach(m => {
+      if (!m.user) return;
+      const u = m.user;
+      const nick = m.nickname || u.username;
+      if (
+        u.username.toLowerCase().includes(mentionQuery) ||
+        nick.toLowerCase().includes(mentionQuery)
+      ) {
+        const memberRole = roles?.find(r => m.roleIds.includes(r.id));
+        items.push({
+          type: 'member',
+          id: u.id,
+          name: nick,
+          tag: `@${u.username}`,
+          description: m.nickname ? `Username: ${u.username}` : undefined,
+          avatar: u.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.id}`,
+          color: memberRole?.color,
+          discriminator: u.discriminator
+        });
+      }
+    });
+
+    return items.slice(0, 8);
+  }, [isDM, members, roles, showMentionPopup, mentionQuery]);
 
   // Auto-focus input when clicking Reply on a message
   useEffect(() => {
@@ -160,6 +231,9 @@ export const MessageInput: React.FC<MessageInputProps> = ({
       if (stickerRef.current && !stickerRef.current.contains(e.target as Node)) {
         setShowStickerPicker(false);
       }
+      if (mentionPopupRef.current && !mentionPopupRef.current.contains(e.target as Node) && textareaRef.current !== e.target) {
+        setShowMentionPopup(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -171,11 +245,81 @@ export const MessageInput: React.FC<MessageInputProps> = ({
     onSendMessage(content.trim(), attachments, undefined, replyingTo?.id);
     setContent('');
     setAttachments([]);
+    setShowMentionPopup(false);
     onCancelReply();
     onStopTyping();
   };
 
+  const insertMention = (mentionTag: string) => {
+    const cursor = textareaRef.current?.selectionStart ?? content.length;
+    const before = content.slice(0, mentionIndex);
+    const after = content.slice(cursor);
+    const replacement = `${mentionTag} `;
+    const updated = before + replacement + after;
+    setContent(updated);
+    setShowMentionPopup(false);
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        const newPos = before.length + replacement.length;
+        textareaRef.current.setSelectionRange(newPos, newPos);
+      }
+    }, 10);
+  };
+
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newContent = e.target.value;
+    setContent(newContent);
+    onTyping();
+
+    if (!isDM && members && members.length > 0) {
+      const cursor = e.target.selectionStart ?? newContent.length;
+      const textBeforeCursor = newContent.slice(0, cursor);
+      const atMatch = textBeforeCursor.match(/(?:^|\s)@([a-zA-Z0-9_-]*)$/);
+
+      if (atMatch) {
+        const query = atMatch[1].toLowerCase();
+        const matchStart = atMatch.index! + (atMatch[0].startsWith(' ') ? 1 : 0);
+        setMentionQuery(query);
+        setMentionIndex(matchStart);
+        setShowMentionPopup(true);
+        setSelectedMentionIdx(0);
+      } else {
+        setShowMentionPopup(false);
+      }
+    } else {
+      setShowMentionPopup(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showMentionPopup && mentionList.length > 0) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedMentionIdx(prev => (prev > 0 ? prev - 1 : mentionList.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedMentionIdx(prev => (prev < mentionList.length - 1 ? prev + 1 : 0));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const selected = mentionList[selectedMentionIdx];
+        if (selected) {
+          insertMention(selected.tag);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setShowMentionPopup(false);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -408,10 +552,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
             <textarea
               ref={textareaRef}
               value={content}
-              onChange={(e) => {
-                setContent(e.target.value);
-                onTyping();
-              }}
+              onChange={handleContentChange}
               onKeyDown={handleKeyDown}
               placeholder={isDM ? `Message @${channelName}` : `Message #${channelName}`}
               rows={1}
@@ -498,6 +639,73 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           </>
         )}
       </div>
+
+      {/* Floating Mention Autocomplete Popup (Server Chat Only) */}
+      {!isDM && showMentionPopup && mentionList.length > 0 && (
+        <div
+          ref={mentionPopupRef}
+          className="absolute bottom-full mb-2 left-4 right-4 max-w-sm bg-[#13161f] border border-white/10 rounded-2xl shadow-2xl p-1.5 overflow-hidden z-40 backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150"
+        >
+          <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-white/5 flex items-center justify-between">
+            <span className="flex items-center space-x-1.5">
+              <AtSign size={12} className="text-indigo-400" />
+              <span>Tag Anggota Server</span>
+            </span>
+            <span className="text-[9px] text-slate-500">↑↓ Navigasi • ↵ Pilih</span>
+          </div>
+
+          <div className="max-h-52 overflow-y-auto custom-scrollbar p-1 space-y-0.5">
+            {mentionList.map((item, idx) => {
+              const isSelected = idx === selectedMentionIdx;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => insertMention(item.tag)}
+                  onMouseEnter={() => setSelectedMentionIdx(idx)}
+                  className={`w-full px-2.5 py-2 rounded-xl flex items-center space-x-2.5 text-left transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'hover:bg-white/[0.04] text-slate-200'
+                  }`}
+                >
+                  {item.type === 'special' ? (
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${
+                      isSelected ? 'bg-white/20 text-white' : 'bg-indigo-500/15 text-indigo-400'
+                    }`}>
+                      {item.id === 'everyone' ? <Users size={15} /> : <AtSign size={15} />}
+                    </div>
+                  ) : (
+                    <img
+                      src={item.avatar}
+                      alt={item.name}
+                      className="w-7 h-7 rounded-lg object-cover bg-slate-800"
+                    />
+                  )}
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center space-x-1.5">
+                      <span className="font-bold text-xs truncate" style={{ color: !isSelected && item.color ? item.color : undefined }}>
+                        {item.tag}
+                      </span>
+                      {item.discriminator && (
+                        <span className={`text-[10px] font-mono ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
+                          #{item.discriminator}
+                        </span>
+                      )}
+                    </div>
+                    {item.description && (
+                      <div className={`text-[10px] truncate ${isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>
+                        {item.description}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Create Poll Modal */}
       <CreatePollModal
