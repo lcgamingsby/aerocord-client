@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Sparkles, Compass, ShieldAlert, Upload, Image } from 'lucide-react';
 import { Server } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -265,10 +265,6 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
               />
             </div>
 
-            <div className="p-3.5 bg-[#0c0e14] rounded-2xl border border-white/5 text-xs text-slate-400">
-              <div className="font-semibold text-slate-300 mb-1">Coba Kode Server Utama:</div>
-              <code className="text-emerald-400 font-mono font-bold">AERO-2026</code> (Aero Headquarters)
-            </div>
 
             <div className="pt-4 flex justify-between items-center border-t border-white/5">
               <button

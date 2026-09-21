@@ -20,11 +20,11 @@ interface SoundboardModalProps {
 
 const EMOJI_OPTIONS = ['🔊', '🎶', '💥', '🎺', '🤣', '🎮', '⚡', '🔔', '📣', '🦆', '🏆', '✨', '💣', '🚀', '🎯', '🐱'];
 const MAX_SOUNDBOARDS = 5;
-const MAX_FILE_SIZE_BYTES = 3 * 1024 * 1024; // 3MB
+const MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024; // 1MB
 
 export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClose }) => {
   const { user } = useAuth();
-  const { playSoundboard } = useVoice();
+  const { playSoundboard, currentVoiceChannel, activeCall } = useVoice();
   const storageKey = `aerocord_custom_soundboards_${user?.id || 'guest'}`;
 
   const [sounds, setSounds] = useState<CustomSoundItem[]>([]);
@@ -66,16 +66,21 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
 
   const handlePlaySound = (item: CustomSoundItem) => {
     setActiveSoundId(item.id);
-    // Play locally
-    try {
-      const audio = new Audio(item.audioUrl);
-      audio.volume = 0.85;
-      audio.play().catch(err => console.warn('Audio play error:', err));
-    } catch (err) {
-      console.warn('Audio error:', err);
+
+    // If connected to voice channel or call, broadcast via socket
+    // (the server will broadcast to room and VoiceContext will play it once)
+    if (currentVoiceChannel || activeCall) {
+      playSoundboard(item.id, item.name, item.audioUrl);
+    } else {
+      // If not in a voice channel, play locally for preview
+      try {
+        const audio = new Audio(item.audioUrl);
+        audio.volume = 0.85;
+        audio.play().catch(err => console.warn('Audio play error:', err));
+      } catch (err) {
+        console.warn('Audio error:', err);
+      }
     }
-    // Broadcast to room
-    playSoundboard(item.id, item.name, item.audioUrl);
 
     setTimeout(() => {
       setActiveSoundId(null);
@@ -99,7 +104,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setFormError(`Ukuran file melebihi batas 3MB (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+      setFormError(`Ukuran file melebihi batas 1MB (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
       return;
     }
 
@@ -278,10 +283,10 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
               </div>
             </div>
 
-            {/* Audio File Upload (<= 3MB) */}
+            {/* Audio File Upload (<= 1MB) */}
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                File Audio (Maks. 3MB) <span className="text-rose-400">*</span>
+                File Audio (Maks. 1MB) <span className="text-rose-400">*</span>
               </label>
               <input
                 ref={fileInputRef}
@@ -299,7 +304,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
                   {audioFileName || 'Pilih atau Tarik File Audio'}
                 </span>
                 <span className="text-[10px] text-slate-400 mt-0.5">
-                  {audioFileSize ? `${(audioFileSize / (1024 * 1024)).toFixed(2)} MB ✓` : 'Format MP3, WAV, OGG (Maks. 3MB)'}
+                  {audioFileSize ? `${(audioFileSize / (1024 * 1024)).toFixed(2)} MB ✓` : 'Format MP3, WAV, OGG (Maks. 1MB)'}
                 </span>
               </div>
             </div>
@@ -343,7 +348,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
                 </div>
                 <div className="text-xs font-bold text-slate-200">Belum Ada Soundboard</div>
                 <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                  Tambahkan file suara kustom Anda (maks. 3MB per file, hingga 5 suara per akun) untuk diputar di voice chat.
+                  Tambahkan file suara kustom Anda (maks. 1MB per file, hingga 5 suara per akun) untuk diputar di voice chat.
                 </p>
               </div>
             ) : (
@@ -386,7 +391,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
 
             {/* Footer Hint */}
             <div className="pt-2 border-t border-white/5 text-center text-[10px] text-slate-400">
-              Maksimal 5 soundboard per akun & maksimal 3MB per file.
+              Maksimal 5 soundboard per akun & maksimal 1MB per file.
             </div>
           </div>
         )}
