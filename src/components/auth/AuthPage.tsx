@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { MessageSquare, Check, X, ShieldCheck, User, Lock, Mail, ShieldAlert, Smartphone, FileCheck, ArrowLeft, RefreshCw, KeyRound, Sparkles } from 'lucide-react';
+import { MessageSquare, Check, X, ShieldCheck, User, Lock, Mail, ShieldAlert, Smartphone, FileCheck, ArrowLeft, RefreshCw, KeyRound, Sparkles, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import { apiUrl } from '../../config/api';
 
 export const AuthPage: React.FC = () => {
@@ -26,6 +26,18 @@ export const AuthPage: React.FC = () => {
   const [keyFileContent, setKeyFileContent] = useState('');
   const [twoFactorLoading, setTwoFactorLoading] = useState(false);
 
+  // Forgot Password state
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'email' | 'verify' | 'new-password'>('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotResetToken, setForgotResetToken] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotShowPassword, setForgotShowPassword] = useState(false);
+  const [forgotResendCountdown, setForgotResendCountdown] = useState(0);
+  const [forgotLoading, setForgotLoading] = useState(false);
+
   // Duplicate checks
   const [isUsernameTaken, setIsUsernameTaken] = useState<boolean | null>(null);
   const [isEmailTaken, setIsEmailTaken] = useState<boolean | null>(null);
@@ -47,7 +59,7 @@ export const AuthPage: React.FC = () => {
 
   const strength = getStrengthLabel();
 
-  // Resend Countdown Timer
+  // Resend Countdown Timer (Registration)
   useEffect(() => {
     if (resendCountdown <= 0) return;
     const interval = setInterval(() => {
@@ -55,6 +67,15 @@ export const AuthPage: React.FC = () => {
     }, 1000);
     return () => clearInterval(interval);
   }, [resendCountdown]);
+
+  // Resend Countdown Timer (Forgot Password)
+  useEffect(() => {
+    if (forgotResendCountdown <= 0) return;
+    const interval = setInterval(() => {
+      setForgotResendCountdown(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [forgotResendCountdown]);
 
   // Debounced duplicate availability check
   useEffect(() => {
@@ -159,6 +180,107 @@ export const AuthPage: React.FC = () => {
     }
   };
 
+  // ========== FORGOT PASSWORD HANDLERS ==========
+
+  const handleForgotSendOTP = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!forgotEmail.trim()) { setError('Email wajib diisi.'); return; }
+    setError(''); setInfoMessage(''); setForgotLoading(true);
+    try {
+      const res = await fetch(apiUrl('/api/auth/forgot-password/send-otp'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() })
+      });
+      const data = await res.json();
+      setForgotLoading(false);
+      if (!res.ok) { setError(data.error || 'Gagal mengirim kode reset.'); return; }
+      setForgotResendCountdown(60);
+      setForgotStep('verify');
+      setInfoMessage(`Kode reset telah dikirim ke ${forgotEmail.trim().toLowerCase()}. Berlaku 10 menit.`);
+    } catch {
+      setForgotLoading(false);
+      setError('Koneksi gagal. Coba lagi.');
+    }
+  };
+
+  const handleForgotVerifyOTP = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (forgotOtp.length !== 6) { setError('Masukkan 6 digit kode OTP.'); return; }
+    setError(''); setForgotLoading(true);
+    try {
+      const res = await fetch(apiUrl('/api/auth/forgot-password/verify-otp'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase(), code: forgotOtp.trim() })
+      });
+      const data = await res.json();
+      setForgotLoading(false);
+      if (!res.ok) { setError(data.error || 'Kode tidak valid.'); return; }
+      setForgotResetToken(data.resetToken);
+      setForgotStep('new-password');
+      setInfoMessage('Kode valid! Buat password baru Anda sekarang.');
+    } catch {
+      setForgotLoading(false);
+      setError('Koneksi gagal. Coba lagi.');
+    }
+  };
+
+  const handleForgotResetPassword = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!forgotNewPassword) { setError('Password baru wajib diisi.'); return; }
+    if (forgotNewPassword !== forgotConfirmPassword) { setError('Konfirmasi password tidak cocok.'); return; }
+    setError(''); setForgotLoading(true);
+    try {
+      const res = await fetch(apiUrl('/api/auth/forgot-password/reset'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resetToken: forgotResetToken, newPassword: forgotNewPassword })
+      });
+      const data = await res.json();
+      setForgotLoading(false);
+      if (!res.ok) { setError(data.error || 'Gagal mereset password.'); return; }
+      // Success — go back to login with a success message
+      setForgotPasswordMode(false);
+      setForgotStep('email');
+      setForgotEmail(''); setForgotOtp(''); setForgotNewPassword(''); setForgotConfirmPassword('');
+      setIsRegister(false);
+      setInfoMessage('Password berhasil direset! Silakan login dengan password baru Anda.');
+    } catch {
+      setForgotLoading(false);
+      setError('Koneksi gagal. Coba lagi.');
+    }
+  };
+
+  const handleForgotResendOTP = async () => {
+    if (forgotResendCountdown > 0 || forgotLoading) return;
+    setError(''); setForgotLoading(true);
+    try {
+      const res = await fetch(apiUrl('/api/auth/forgot-password/send-otp'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() })
+      });
+      const data = await res.json();
+      setForgotLoading(false);
+      if (!res.ok) { setError(data.error || 'Gagal mengirim ulang kode.'); return; }
+      setForgotResendCountdown(60);
+      setInfoMessage(`Kode baru telah dikirim ke ${forgotEmail.trim().toLowerCase()}.`);
+    } catch {
+      setForgotLoading(false);
+      setError('Koneksi gagal. Coba lagi.');
+    }
+  };
+
+  // Forgot password password strength check
+  const fpHasMinLength = forgotNewPassword.length >= 8;
+  const fpHasUppercase = /[A-Z]/.test(forgotNewPassword);
+  const fpHasLowercase = /[a-z]/.test(forgotNewPassword);
+  const fpHasNumber = /[0-9]/.test(forgotNewPassword);
+  const fpHasSpecial = /[!@#$%^&*()_+\-=[\]{};':"|,.<>\/?]/.test(forgotNewPassword);
+  const fpCriteriaCount = [fpHasMinLength, fpHasUppercase, fpHasLowercase, fpHasNumber, fpHasSpecial].filter(Boolean).length;
+  const fpStrength = fpCriteriaCount <= 2 ? { text: 'Lemah', color: 'bg-rose-500', width: '25%' } : fpCriteriaCount <= 4 ? { text: 'Sedang', color: 'bg-amber-500', width: '65%' } : { text: 'Sangat Kuat', color: 'bg-emerald-500', width: '100%' };
+
   const handleResendOTP = async () => {
     if (resendCountdown > 0 || loading) return;
     setError('');
@@ -231,18 +353,24 @@ export const AuthPage: React.FC = () => {
             {/* Header Titles */}
             <div className="mb-6">
               <h2 className="text-xl font-bold text-white mb-1">
-                {isRegister
-                  ? registerStep === 'verify'
-                    ? 'Verifikasi Email Anda'
-                    : 'Buat Akun Baru'
-                  : 'Selamat Datang Kembali'}
+                {forgotPasswordMode
+                  ? forgotStep === 'email' ? 'Lupa Password?'
+                  : forgotStep === 'verify' ? 'Masukkan Kode OTP'
+                  : 'Buat Password Baru'
+                  : isRegister
+                    ? registerStep === 'verify' ? 'Verifikasi Email Anda' : 'Buat Akun Baru'
+                    : 'Selamat Datang Kembali'}
               </h2>
               <p className="text-xs text-slate-400">
-                {isRegister
-                  ? registerStep === 'verify'
-                    ? `Masukkan 6 digit kode yang dikirim ke ${email || 'email Anda'}`
-                    : 'Daftar untuk menikmati obrolan aman & panggilan suara jernih.'
-                  : 'Masuk ke akun Anda untuk mulai berkomunikasi.'}
+                {forgotPasswordMode
+                  ? forgotStep === 'email' ? 'Masukkan email terdaftar Anda untuk menerima kode reset password.'
+                  : forgotStep === 'verify' ? `Kode 6-digit dikirim ke ${forgotEmail}`
+                  : 'Buat password baru yang kuat untuk akun Anda.'
+                  : isRegister
+                    ? registerStep === 'verify'
+                      ? `Masukkan 6 digit kode yang dikirim ke ${email || 'email Anda'}`
+                      : 'Daftar untuk menikmati obrolan aman & panggilan suara jernih.'
+                    : 'Masuk ke akun Anda untuk mulai berkomunikasi.'}
               </p>
             </div>
 
@@ -263,9 +391,183 @@ export const AuthPage: React.FC = () => {
             )}
 
             {/* ======================================================== */}
-            {/* REGISTER STEP 2: VERIFICATION OTP CODE FORM               */}
+            {/* FORGOT PASSWORD STEPS                                       */}
             {/* ======================================================== */}
-            {isRegister && registerStep === 'verify' ? (
+            {forgotPasswordMode ? (
+              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
+                {/* Back Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (forgotStep === 'email') {
+                      setForgotPasswordMode(false);
+                      setForgotStep('email');
+                    } else if (forgotStep === 'verify') {
+                      setForgotStep('email');
+                    } else {
+                      setForgotStep('verify');
+                    }
+                    setError('');
+                    setInfoMessage('');
+                  }}
+                  className="flex items-center space-x-1.5 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <ArrowLeft size={14} />
+                  <span>Kembali</span>
+                </button>
+
+                {/* Step 1: Email Input */}
+                {forgotStep === 'email' && (
+                  <form onSubmit={handleForgotSendOTP} className="space-y-4">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                        Alamat Email <span className="text-rose-400">*</span>
+                      </label>
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3.5 text-slate-400"><Mail size={16} /></span>
+                        <input
+                          type="email"
+                          value={forgotEmail}
+                          onChange={(e) => setForgotEmail(e.target.value)}
+                          placeholder="nama@domain.com"
+                          required
+                          autoFocus
+                          className="w-full pl-10 pr-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border border-white/10 focus:border-orange-500 focus:outline-none transition-colors"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading || !forgotEmail.trim()}
+                      className="w-full py-3 bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-lg shadow-orange-500/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                    >
+                      {forgotLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><RotateCcw size={16} /><span>Kirim Kode Reset</span></>}
+                    </button>
+                  </form>
+                )}
+
+                {/* Step 2: OTP Input */}
+                {forgotStep === 'verify' && (
+                  <form onSubmit={handleForgotVerifyOTP} className="space-y-4">
+                    <div className="p-4 rounded-2xl bg-[#0c0e14] border border-white/5 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Email Tujuan</span>
+                        <span className="text-xs font-semibold text-orange-300 font-mono truncate max-w-[60%]">{forgotEmail}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500">Periksa folder Spam jika tidak ada di Kotak Masuk.</p>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5 text-center">Kode OTP (6 Digit)</label>
+                      <input
+                        type="text"
+                        value={forgotOtp}
+                        onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="000000"
+                        maxLength={6}
+                        autoFocus
+                        required
+                        className="w-full px-4 py-3 bg-[#0c0e14] text-center text-xl text-slate-100 rounded-xl border border-white/10 focus:border-orange-500 focus:outline-none font-mono tracking-[0.5em] transition-colors"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading || forgotOtp.length !== 6}
+                      className="w-full py-3 bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-lg shadow-orange-500/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                    >
+                      {forgotLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><ShieldCheck size={16} /><span>Verifikasi Kode</span></>}
+                    </button>
+                    <div className="text-center">
+                      {forgotResendCountdown > 0 ? (
+                        <p className="text-xs text-slate-400">Kirim ulang dalam <span className="font-bold text-orange-300">{forgotResendCountdown}s</span></p>
+                      ) : (
+                        <button type="button" onClick={handleForgotResendOTP} disabled={forgotLoading} className="text-xs text-orange-400 hover:text-orange-300 hover:underline cursor-pointer transition-colors disabled:opacity-50 flex items-center justify-center space-x-1 mx-auto">
+                          <RefreshCw size={12} />
+                          <span>Kirim Ulang Kode</span>
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                )}
+
+                {/* Step 3: New Password */}
+                {forgotStep === 'new-password' && (
+                  <form onSubmit={handleForgotResetPassword} className="space-y-4">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5">Password Baru <span className="text-rose-400">*</span></label>
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3.5 text-slate-400"><Lock size={16} /></span>
+                        <input
+                          type={forgotShowPassword ? 'text' : 'password'}
+                          value={forgotNewPassword}
+                          onChange={(e) => setForgotNewPassword(e.target.value)}
+                          placeholder="••••••••"
+                          required
+                          autoFocus
+                          className="w-full pl-10 pr-10 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border border-white/10 focus:border-orange-500 focus:outline-none transition-colors"
+                        />
+                        <button type="button" onClick={() => setForgotShowPassword(p => !p)} className="absolute right-3 text-slate-400 hover:text-white cursor-pointer transition-colors">
+                          {forgotShowPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
+                      {/* Strength Indicator */}
+                      {forgotNewPassword && (
+                        <div className="mt-2.5 p-3 rounded-xl bg-[#0c0e14] border border-white/5 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Kekuatan</span>
+                            <span className="text-[10px] font-bold text-slate-300">{fpStrength.text}</span>
+                          </div>
+                          <div className="h-1 rounded-full bg-white/5 overflow-hidden">
+                            <div className={`h-full rounded-full transition-all duration-300 ${fpStrength.color}`} style={{ width: fpStrength.width }} />
+                          </div>
+                          <div className="grid grid-cols-2 gap-1">
+                            {[
+                              { ok: fpHasMinLength, label: '8+ karakter' },
+                              { ok: fpHasUppercase, label: 'Huruf besar (A-Z)' },
+                              { ok: fpHasLowercase, label: 'Huruf kecil (a-z)' },
+                              { ok: fpHasNumber, label: 'Angka (0-9)' },
+                              { ok: fpHasSpecial, label: 'Simbol (!@#...)' }
+                            ].map(c => (
+                              <div key={c.label} className={`flex items-center space-x-1 text-[10px] ${c.ok ? 'text-emerald-400' : 'text-slate-500'}`}>
+                                {c.ok ? <Check size={10} /> : <X size={10} />}
+                                <span>{c.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1.5">Konfirmasi Password <span className="text-rose-400">*</span></label>
+                      <div className="relative flex items-center">
+                        <span className="absolute left-3.5 text-slate-400"><Lock size={16} /></span>
+                        <input
+                          type={forgotShowPassword ? 'text' : 'password'}
+                          value={forgotConfirmPassword}
+                          onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                          placeholder="••••••••"
+                          required
+                          className={`w-full pl-10 pr-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border focus:outline-none transition-colors ${
+                            forgotConfirmPassword && forgotNewPassword !== forgotConfirmPassword ? 'border-rose-500' : forgotConfirmPassword && forgotNewPassword === forgotConfirmPassword ? 'border-emerald-500' : 'border-white/10 focus:border-orange-500'
+                          }`}
+                        />
+                      </div>
+                      {forgotConfirmPassword && forgotNewPassword !== forgotConfirmPassword && (
+                        <p className="mt-1 text-[10px] text-rose-400 flex items-center space-x-1"><X size={10} /><span>Password tidak cocok</span></p>
+                      )}
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={forgotLoading || fpCriteriaCount < 5 || forgotNewPassword !== forgotConfirmPassword}
+                      className="w-full py-3 bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 disabled:opacity-50 text-white text-sm font-bold rounded-xl shadow-lg shadow-orange-500/25 transition-all cursor-pointer flex items-center justify-center space-x-2"
+                    >
+                      {forgotLoading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><KeyRound size={16} /><span>Reset Password</span></>}
+                    </button>
+                  </form>
+                )}
+              </div>
+
+            ) : isRegister && registerStep === 'verify' ? (
               <form onSubmit={handleSubmit} className="space-y-5">
                 <div className="p-4 rounded-2xl bg-[#0c0e14] border border-white/5 space-y-2">
                   <div className="flex items-center justify-between">
@@ -486,11 +788,31 @@ export const AuthPage: React.FC = () => {
                     <span>{isRegister ? 'Kirim Kode Verifikasi' : 'Masuk ke AeroCord'}</span>
                   )}
                 </button>
+
+                {/* Lupa Password Link (Login only) */}
+                {!isRegister && (
+                  <div className="text-center mt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotPasswordMode(true);
+                        setForgotStep('email');
+                        setForgotEmail(identifier.includes('@') ? identifier : '');
+                        setError('');
+                        setInfoMessage('');
+                      }}
+                      className="text-xs text-slate-400 hover:text-orange-400 transition-colors cursor-pointer hover:underline"
+                    >
+                      Lupa password? Reset di sini
+                    </button>
+                  </div>
+                )}
               </form>
             )}
           </div>
 
-          {/* Toggle Switch */}
+          {/* Toggle Switch (hidden in forgot password mode) */}
+          {!forgotPasswordMode && (
           <div className="mt-6 text-center text-xs text-slate-400">
             {isRegister ? (
               <span>
@@ -526,6 +848,7 @@ export const AuthPage: React.FC = () => {
               </span>
             )}
           </div>
+          )}
         </div>
       </div>
 
