@@ -430,7 +430,7 @@ export const AuthPage: React.FC = () => {
                           type="email"
                           value={forgotEmail}
                           onChange={(e) => setForgotEmail(e.target.value)}
-                          placeholder="nama@domain.com"
+                          placeholder="[EMAIL_ADDRESS]"
                           required
                           autoFocus
                           className="w-full pl-10 pr-3.5 py-2.5 bg-[#0c0e14] text-sm text-slate-100 rounded-xl border border-white/10 focus:border-orange-500 focus:outline-none transition-colors"
