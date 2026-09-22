@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Message, User, Role, LinkPreviewData } from '../../types';
 import { renderMarkdown } from '../../utils/markdown';
-import { Smile, Reply, Edit2, Trash2, Pin, Check, X, Download, File, FileText, Film, Music, FileArchive, BarChart2, CheckCircle2, Circle } from 'lucide-react';
+import { Smile, Reply, Edit2, Trash2, Pin, PinOff, Check, X, Download, File, FileText, Film, Music, FileArchive, BarChart2, CheckCircle2, Circle } from 'lucide-react';
 import { EmojiPicker } from './EmojiPicker';
 import { AudioPlayer } from './AudioPlayer';
 import { CodeBlock } from './CodeBlock';
@@ -20,6 +20,7 @@ interface MessageItemProps {
   onAddReaction: (messageId: string, emoji: string) => void;
   onOpenImage: (url: string) => void;
   onViewProfile?: (user: User) => void;
+  onPin?: (messageId: string) => void;
 }
 
 export const MessageItem: React.FC<MessageItemProps> = ({
@@ -32,7 +33,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   onDelete,
   onAddReaction,
   onOpenImage,
-  onViewProfile
+  onViewProfile,
+  onPin
 }) => {
   const { socket } = useSocket();
   const [isHovered, setIsHovered] = useState(false);
@@ -41,7 +43,33 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [editContent, setEditContent] = useState(message.content);
   const [autoLinkPreview, setAutoLinkPreview] = useState<LinkPreviewData | null>(null);
 
+  // Long press for mobile pin
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isLongPressing, setIsLongPressing] = useState(false);
+
   const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  // Long press handlers for mobile
+  const handleTouchStart = useCallback(() => {
+    longPressTimerRef.current = setTimeout(() => {
+      setIsLongPressing(true);
+      setIsHovered(true);
+    }, 500);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    setIsLongPressing(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    };
+  }, []);
 
   const isAuthor = currentUser?.id === message.authorId;
   const author = message.author;
@@ -174,9 +202,16 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   return (
     <div
       onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseLeave={() => { if (!isLongPressing) setIsHovered(false); }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
       className={`group relative flex px-4 py-1.5 transition-colors duration-100 ${
-        isMentioned
+        message.isPinned
+          ? isMentioned
+            ? 'bg-amber-500/[0.08] hover:bg-amber-500/[0.12] border-l-2 border-amber-500'
+            : 'bg-amber-400/[0.04] border-l-2 border-amber-500/40'
+          : isMentioned
           ? 'bg-amber-500/[0.08] hover:bg-amber-500/[0.12] border-l-2 border-amber-500'
           : isEditing
           ? 'bg-[#2e3035]/90'
@@ -196,9 +231,12 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         </div>
       )}
 
-      {/* Floating Action Toolbar on Hover */}
+      {/* Floating Action Toolbar on Hover / Long Press */}
       {isHovered && !isEditing && (
-        <div className="absolute -top-3.5 right-4 z-30 flex items-center bg-[#313338] border border-[#232428] rounded-md shadow-lg p-0.5 space-x-0.5 animate-in fade-in zoom-in-95 duration-100">
+        <div
+          onMouseLeave={() => { setIsHovered(false); setIsLongPressing(false); }}
+          className="absolute -top-3.5 right-4 z-30 flex items-center bg-[#313338] border border-[#232428] rounded-md shadow-lg p-0.5 space-x-0.5 animate-in fade-in zoom-in-95 duration-100"
+        >
           <button
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             title="Add Reaction"
@@ -213,6 +251,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({
           >
             <Reply size={16} />
           </button>
+          {onPin && (
+            <button
+              onClick={() => { onPin(message.id); setIsHovered(false); }}
+              title={message.isPinned ? 'Lepas Sematan' : 'Sematkan Pesan'}
+              className={`p-1.5 rounded transition-colors ${
+                message.isPinned
+                  ? 'text-amber-400 hover:bg-amber-500/20 hover:text-amber-300'
+                  : 'text-gray-400 hover:bg-[#35373c] hover:text-amber-400'
+              }`}
+            >
+              {message.isPinned ? <PinOff size={16} /> : <Pin size={16} />}
+            </button>
+          )}
           {isAuthor && (
             <button
               onClick={() => setIsEditing(true)}

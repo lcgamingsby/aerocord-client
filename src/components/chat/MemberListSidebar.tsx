@@ -8,6 +8,7 @@ interface MemberListSidebarProps {
   ownerId?: string;
   onlineUsers: Map<string, { status: string; customStatus?: string }>;
   onViewProfile?: (user: User, member?: ServerMember) => void;
+  show?: boolean;
 }
 
 export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
@@ -15,7 +16,8 @@ export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
   roles,
   ownerId,
   onlineUsers,
-  onViewProfile
+  onViewProfile,
+  show = true
 }) => {
   const getRoleForMember = (m: ServerMember): Role | undefined => {
     return roles.find(r => m.roleIds.includes(r.id));
@@ -91,22 +93,30 @@ export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
   };
 
   return (
-    <div className="w-56 lg:w-60 bg-[#11131a] border-l border-white/5 flex flex-col h-full select-none overflow-y-auto p-3 flex-shrink-0 animate-in slide-in-from-right-4 duration-150">
-      {adminMembers.length > 0 && (
-        <div className="mb-4">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">
-            Admin — {adminMembers.length}
+    <div
+      className={`flex-shrink-0 overflow-hidden transition-all duration-300 ease-in-out ${
+        show ? 'w-56 lg:w-60 opacity-100' : 'w-0 opacity-0'
+      }`}
+      style={{ willChange: 'width, opacity' }}
+    >
+      <div className="w-56 lg:w-60 h-full bg-[#11131a] border-l border-white/5 flex flex-col select-none overflow-y-auto p-3">
+        {adminMembers.length > 0 && (
+          <div className="mb-4">
+            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">
+              Admin — {adminMembers.length}
+            </div>
+            <div className="space-y-0.5">{adminMembers.map(renderMemberRow)}</div>
           </div>
-          <div className="space-y-0.5">{adminMembers.map(renderMemberRow)}</div>
-        </div>
-      )}
+        )}
 
-      <div>
-        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">
-          Members — {regularMembers.length}
+        <div>
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">
+            Members — {regularMembers.length}
+          </div>
+          <div className="space-y-0.5">{regularMembers.map(renderMemberRow)}</div>
         </div>
-        <div className="space-y-0.5">{regularMembers.map(renderMemberRow)}</div>
       </div>
     </div>
   );
 };
+

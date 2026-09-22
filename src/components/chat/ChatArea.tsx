@@ -118,11 +118,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       }));
     };
 
+    const handleMessagePinned = (data: { messageId: string; isPinned: boolean }) => {
+      setMessages(prev => prev.map(m =>
+        m.id === data.messageId ? { ...m, isPinned: data.isPinned } : m
+      ));
+    };
+
     socket.on('new_message', handleNewMessage);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
     socket.on('reaction_updated', handleReactionUpdated);
     socket.on('poll_updated', handlePollUpdated);
+    socket.on('message_pinned_updated', handleMessagePinned);
 
     return () => {
       socket.off('new_message', handleNewMessage);
@@ -130,6 +137,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       socket.off('message_deleted', handleMessageDeleted);
       socket.off('reaction_updated', handleReactionUpdated);
       socket.off('poll_updated', handlePollUpdated);
+      socket.off('message_pinned_updated', handleMessagePinned);
     };
   }, [socket, activeId]);
 
@@ -142,6 +150,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     if (recipientUser && conversation) {
       startDirectCall(recipientUser, conversation.id, isVideo);
     }
+  };
+
+  // Pin/unpin handler — only allowed in server channels
+  const handlePinMessage = (messageId: string) => {
+    if (!socket || !channel) return;
+    socket.emit('toggle_pin_message', { messageId });
   };
 
   const filteredMessages = searchQuery.trim()
@@ -385,6 +399,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 onAddReaction={(mId, emoji) => addReaction(mId, emoji)}
                 onOpenImage={(url) => setLightboxImage(url)}
                 onViewProfile={(authorUser) => setInspectUser(authorUser)}
+                onPin={channel ? handlePinMessage : undefined}
               />
             );
           })}

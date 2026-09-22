@@ -324,13 +324,14 @@ const MainLayout: React.FC = () => {
           )}
 
           {/* Right Member List Sidebar (for server text channels) */}
-          {showMembers && activeChannel?.type === 'text' && (
+          {activeChannel?.type === 'text' && (
             <MemberListSidebar
               members={activeServer.members}
               roles={activeServer.roles}
               ownerId={activeServer.ownerId}
               onlineUsers={onlineUsers}
               onViewProfile={(targetUser) => setInspectUser(targetUser)}
+              show={showMembers}
             />
           )}
         </div>
