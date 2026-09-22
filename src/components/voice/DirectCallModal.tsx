@@ -10,6 +10,7 @@ export const DirectCallModal: React.FC = () => {
     acceptCall,
     rejectCall,
     endCall,
+    voiceParticipants,
     isMuted,
     isDeafened,
     isScreenSharing,
@@ -66,8 +67,10 @@ export const DirectCallModal: React.FC = () => {
 
   // Detect remote screen share stream
   let remoteScreenStream: MediaStream | null = null;
-  remoteStreams.forEach((stream) => {
-    if (stream.getVideoTracks().length > 0) {
+  remoteStreams.forEach((stream, peerId) => {
+    const peerParticipant = voiceParticipants.find(p => p.userId === peerId);
+    const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live' && !t.muted);
+    if (hasLiveVideo && (peerParticipant ? peerParticipant.isScreenSharing : true)) {
       remoteScreenStream = stream;
     }
   });
@@ -127,9 +130,16 @@ export const DirectCallModal: React.FC = () => {
   }
 
   // 3. Active Connected Call
+  const hasScreenShare = !!remoteScreenStream || (isScreenSharing && !!screenStream && screenStream.getVideoTracks().some(t => t.readyState === 'live'));
+
+  useEffect(() => {
+    if (isScreenShareExpanded && !hasScreenShare) {
+      setIsScreenShareExpanded(false);
+    }
+  }, [hasScreenShare, isScreenShareExpanded]);
+
   if (activeCall && activeCall.status === 'connected') {
     const target = activeCall.targetUser;
-    const hasScreenShare = remoteScreenStream || (isScreenSharing && screenStream);
 
     // ─── Fullscreen Screen Share Overlay ───
     if (isScreenShareExpanded && hasScreenShare) {

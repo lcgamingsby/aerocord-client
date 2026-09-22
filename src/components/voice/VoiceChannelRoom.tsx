@@ -53,7 +53,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
   // Find any active video/screen share stream (local or remote)
   const activeShares: { userId: string; username: string; stream: MediaStream; isLocal: boolean }[] = [];
 
-  if (isScreenSharing && screenStream) {
+  if (isScreenSharing && screenStream && screenStream.getVideoTracks().some(t => t.readyState === 'live')) {
     activeShares.push({
       userId: user?.id || 'local',
       username: `${user?.username || 'You'} (Layar Anda)`,
@@ -63,9 +63,10 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
   }
 
   remoteStreams.forEach((stream, peerId) => {
-    const hasVideo = stream.getVideoTracks().length > 0;
-    if (hasVideo) {
-      const peerUser = voiceParticipants.find(p => p.userId === peerId)?.user;
+    const peerParticipant = voiceParticipants.find(p => p.userId === peerId);
+    const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live' && !t.muted);
+    if (hasLiveVideo && (peerParticipant ? peerParticipant.isScreenSharing : true)) {
+      const peerUser = peerParticipant?.user;
       activeShares.push({
         userId: peerId,
         username: `${peerUser?.username || 'Peer'} (Screen Share)`,
@@ -74,6 +75,13 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
       });
     }
   });
+
+  // Automatically reset fullscreen if the share ended
+  useEffect(() => {
+    if (fullscreenShareId && !activeShares.some(s => s.userId === fullscreenShareId)) {
+      setFullscreenShareId(null);
+    }
+  }, [activeShares, fullscreenShareId]);
 
   // Fullscreen share overlay
   const fullscreenShare = fullscreenShareId ? activeShares.find(s => s.userId === fullscreenShareId) : null;

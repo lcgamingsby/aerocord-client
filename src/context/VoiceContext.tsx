@@ -288,21 +288,26 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    // Add microphone tracks if available
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
+    // Add microphone tracks if available, otherwise add audio transceiver
+    if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
+      localStreamRef.current.getAudioTracks().forEach(track => {
         pc.addTrack(track, localStreamRef.current!);
       });
+    } else {
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
     }
 
-    // Add screen share tracks (video and audio) if active
-    if (screenStreamRef.current) {
+    // Add screen share tracks (video and audio) if active, otherwise add recvonly video transceiver
+    if (screenStreamRef.current && screenStreamRef.current.getVideoTracks().length > 0) {
       const senders: RTCRtpSender[] = [];
       screenStreamRef.current.getTracks().forEach(track => {
         const sender = pc.addTrack(track, screenStreamRef.current!);
         senders.push(sender);
       });
       screenSendersRef.current.set(targetUserId, senders);
+    } else {
+      // Ensure video transceiver exists in SDP offer & answer so incoming screen share is negotiated immediately
+      pc.addTransceiver('video', { direction: 'recvonly' });
     }
 
     // Handle remote track received
@@ -323,6 +328,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           peerStream.removeTrack(event.track);
           setRemoteStreams(new Map(remoteStreamsRef.current));
         }
+      };
+
+      event.track.onmute = () => {
+        setRemoteStreams(new Map(remoteStreamsRef.current));
       };
 
       event.track.onunmute = () => {
@@ -529,6 +538,18 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         return p;
       }));
+
+      // If remote peer stopped screen sharing, immediately stop & clean up their video tracks from local composite stream
+      if (!data.isScreenSharing) {
+        const peerStream = remoteStreamsRef.current.get(data.userId);
+        if (peerStream) {
+          peerStream.getVideoTracks().forEach(track => {
+            track.stop();
+            peerStream.removeTrack(track);
+          });
+          setRemoteStreams(new Map(remoteStreamsRef.current));
+        }
+      }
     });
 
     // WebRTC Signaling Handshake (Offer, Answer, ICE)
@@ -697,26 +718,30 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Remove screen track senders from all active peer connections
     peerConnections.current.forEach((pc, peerId) => {
+      const videoTransceiver = pc.getTransceivers().find(t => 
+        t.receiver.track.kind === 'video' || (t.sender.track && t.sender.track.kind === 'video')
+      );
+      if (videoTransceiver && videoTransceiver.sender) {
+        try {
+          videoTransceiver.sender.replaceTrack(null);
+          videoTransceiver.direction = 'recvonly';
+        } catch (e) {
+          console.warn('Error resetting video transceiver direction:', e);
+        }
+      }
+
       const senders = screenSendersRef.current.get(peerId);
       if (senders && senders.length > 0) {
         senders.forEach(sender => {
           try {
-            pc.removeTrack(sender);
+            if (sender !== videoTransceiver?.sender) {
+              pc.removeTrack(sender);
+            }
           } catch (e) {
             console.warn('Error removing screen track sender:', e);
           }
         });
         screenSendersRef.current.delete(peerId);
-      } else {
-        pc.getSenders().forEach(sender => {
-          if (sender.track && sender.track.kind === 'video') {
-            try {
-              pc.removeTrack(sender);
-            } catch (e) {
-              console.warn('Error removing fallback video sender:', e);
-            }
-          }
-        });
       }
 
       // Renegotiate with peer after removing tracks
@@ -757,13 +782,33 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setScreenStream(stream);
         setIsScreenSharing(true);
 
-        // Add all screen tracks to all active peer connections and save senders
+        const videoTrack = stream.getVideoTracks()[0];
+        const audioTrack = stream.getAudioTracks()[0];
+
+        // Add or replace screen tracks on all active peer connections
         peerConnections.current.forEach((pc, peerId) => {
           const senders: RTCRtpSender[] = [];
-          stream.getTracks().forEach(track => {
-            const sender = pc.addTrack(track, stream);
+
+          const videoTransceiver = pc.getTransceivers().find(t => 
+            t.receiver.track.kind === 'video' || (t.sender.track && t.sender.track.kind === 'video')
+          );
+
+          if (videoTrack) {
+            if (videoTransceiver && videoTransceiver.sender) {
+              videoTransceiver.direction = 'sendrecv';
+              videoTransceiver.sender.replaceTrack(videoTrack);
+              senders.push(videoTransceiver.sender);
+            } else {
+              const sender = pc.addTrack(videoTrack, stream);
+              senders.push(sender);
+            }
+          }
+
+          if (audioTrack) {
+            const sender = pc.addTrack(audioTrack, stream);
             senders.push(sender);
-          });
+          }
+
           screenSendersRef.current.set(peerId, senders);
 
           // Renegotiate with peer
