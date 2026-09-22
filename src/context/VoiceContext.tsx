@@ -729,16 +729,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       soundEffects.playUnmuteSound();
     }
 
-    // Auto-mute when deafened
-    if (nextState && !isMutedRef.current) {
-      toggleMute();
-    }
-
     const chanId = currentVoiceChannelRef.current || activeCallRef.current?.conversationId;
     if (socket && chanId) {
       socket.emit('voice_state_update', {
         channelId: chanId,
-        isMuted: nextState ? true : isMutedRef.current,
+        isMuted: isMutedRef.current,
         isDeafened: nextState
       });
     }
@@ -746,7 +741,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (user) {
       setVoiceParticipants(prev => prev.map(p => {
         if (p.userId === user.id) {
-          return { ...p, isDeafened: nextState, isMuted: nextState ? true : isMutedRef.current };
+          return { ...p, isDeafened: nextState };
         }
         return p;
       }));
@@ -763,25 +758,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Remove screen track senders from all active peer connections
     peerConnections.current.forEach((pc, peerId) => {
-      const videoTransceiver = pc.getTransceivers().find(t => 
-        t.receiver.track.kind === 'video' || (t.sender.track && t.sender.track.kind === 'video')
-      );
-      if (videoTransceiver && videoTransceiver.sender) {
-        try {
-          videoTransceiver.sender.replaceTrack(null);
-          videoTransceiver.direction = 'recvonly';
-        } catch (e) {
-          console.warn('Error resetting video transceiver direction:', e);
-        }
-      }
-
       const senders = screenSendersRef.current.get(peerId);
       if (senders && senders.length > 0) {
         senders.forEach(sender => {
           try {
-            if (sender !== videoTransceiver?.sender) {
-              pc.removeTrack(sender);
-            }
+            pc.removeTrack(sender);
           } catch (e) {
             console.warn('Error removing screen track sender:', e);
           }
@@ -802,9 +783,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     });
 
-    if (socket && currentVoiceChannelRef.current) {
+    const chanId = currentVoiceChannelRef.current || activeCallRef.current?.conversationId;
+    if (socket && chanId) {
       socket.emit('voice_state_update', {
-        channelId: currentVoiceChannelRef.current,
+        channelId: chanId,
         isScreenSharing: false
       });
     }
@@ -817,43 +799,30 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         let stream: MediaStream;
         try {
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false
+            }
+          });
         } catch (mediaErr: any) {
           if (mediaErr.name === 'NotAllowedError') throw mediaErr;
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         }
 
         screenStreamRef.current = stream;
         setScreenStream(stream);
         setIsScreenSharing(true);
 
-        const videoTrack = stream.getVideoTracks()[0];
-        const audioTrack = stream.getAudioTracks()[0];
-
-        // Add or replace screen tracks on all active peer connections
+        // Add all screen tracks (both video AND audio) to all active peer connections
         peerConnections.current.forEach((pc, peerId) => {
           const senders: RTCRtpSender[] = [];
-
-          const videoTransceiver = pc.getTransceivers().find(t => 
-            t.receiver.track.kind === 'video' || (t.sender.track && t.sender.track.kind === 'video')
-          );
-
-          if (videoTrack) {
-            if (videoTransceiver && videoTransceiver.sender) {
-              videoTransceiver.direction = 'sendrecv';
-              videoTransceiver.sender.replaceTrack(videoTrack);
-              senders.push(videoTransceiver.sender);
-            } else {
-              const sender = pc.addTrack(videoTrack, stream);
-              senders.push(sender);
-            }
-          }
-
-          if (audioTrack) {
-            const sender = pc.addTrack(audioTrack, stream);
+          stream.getTracks().forEach(track => {
+            const sender = pc.addTrack(track, stream);
             senders.push(sender);
-          }
-
+          });
           screenSendersRef.current.set(peerId, senders);
 
           // Renegotiate with peer
@@ -877,9 +846,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
         }
 
-        if (socket && currentVoiceChannelRef.current) {
+        const chanId = currentVoiceChannelRef.current || activeCallRef.current?.conversationId;
+        if (socket && chanId) {
           socket.emit('voice_state_update', {
-            channelId: currentVoiceChannelRef.current,
+            channelId: chanId,
             isScreenSharing: true
           });
         }
