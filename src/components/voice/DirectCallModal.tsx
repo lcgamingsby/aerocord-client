@@ -173,7 +173,7 @@ export const DirectCallModal: React.FC = () => {
                 const el = e.currentTarget;
                 el.play().catch(err => console.warn('Direct call video metadata play:', err));
               }}
-              autoPlay playsInline muted={!remoteScreenStream}
+              autoPlay playsInline muted
               className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
             />
           </div>

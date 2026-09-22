@@ -122,7 +122,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
             }}
             autoPlay
             playsInline
-            muted={fullscreenShare.isLocal}
+            muted
             className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
           />
         </div>
@@ -221,7 +221,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
                 }}
                 autoPlay
                 playsInline
-                muted={share.isLocal}
+                muted
                 className="w-full h-full object-contain"
               />
               <div className="absolute top-3 left-3 px-3 py-1.5 bg-black/75 backdrop-blur-md rounded-xl text-xs font-semibold text-white flex items-center space-x-2 border border-white/10">
@@ -246,6 +246,8 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
         {voiceParticipants.map((participant) => {
           const pUser = participant.user;
           const isMe = participant.userId === user?.id;
+          const isParticipantMuted = isMe ? isMuted : participant.isMuted;
+          const isParticipantDeafened = isMe ? isDeafened : participant.isDeafened;
           const currentVol = userVolumes.get(participant.userId) ?? 100;
 
           return (
@@ -267,7 +269,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
                   }`}
                 />
                 {/* Mute badge */}
-                {(participant.isMuted || participant.isDeafened) && (
+                {(isParticipantMuted || isParticipantDeafened) && (
                   <div className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-rose-500 text-white shadow-md">
                     <MicOff size={13} />
                   </div>

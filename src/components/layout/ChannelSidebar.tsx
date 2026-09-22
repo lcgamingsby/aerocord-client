@@ -38,7 +38,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   const { user } = useAuth();
   const { socket } = useSocket();
   const { showSuccess, showError, showInfo } = useToast();
-  const { currentVoiceChannel, voiceParticipants, joinVoiceChannel } = useVoice();
+  const { currentVoiceChannel, voiceParticipants, joinVoiceChannel, isMuted, isDeafened } = useVoice();
 
   const [showServerMenu, setShowServerMenu] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<{ [catId: string]: boolean }>({});
@@ -420,6 +420,9 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                           <div className="pl-6 pr-2 py-1 space-y-1 bg-black/20 rounded-xl mb-1">
                             {connectedVoiceUsers.map(p => {
                               const pUser = p.user;
+                              const isMe = p.userId === user?.id;
+                              const isUserMuted = isMe ? isMuted : p.isMuted;
+                              const isUserDeafened = isMe ? isDeafened : p.isDeafened;
                               return (
                                 <div key={p.userId} className="flex items-center justify-between text-[11px] text-slate-300 py-0.5">
                                   <div className="flex items-center space-x-1.5 truncate">
@@ -433,8 +436,8 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
                                     <span className="truncate text-[10px]">{pUser?.username || 'User'}</span>
                                   </div>
                                   <div className="flex items-center space-x-1 text-slate-500">
-                                    {p.isMuted && <MicOff size={11} className="text-rose-400" />}
-                                    {p.isDeafened && <Headphones size={11} className="text-rose-400" />}
+                                    {isUserMuted && <MicOff size={11} className="text-rose-400" />}
+                                    {isUserDeafened && <Headphones size={11} className="text-rose-400" />}
                                     {p.isScreenSharing && <MonitorUp size={11} className="text-emerald-400" />}
                                   </div>
                                 </div>
