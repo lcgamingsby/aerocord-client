@@ -113,32 +113,16 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
             ref={(videoEl) => {
               if (videoEl && videoEl.srcObject !== fullscreenShare.stream) {
                 videoEl.srcObject = fullscreenShare.stream;
-                videoEl.muted = fullscreenShare.isLocal;
-                const vol = isDeafened ? 0 : ((userVolumes.get(fullscreenShare.userId) ?? 100) / 100);
-                videoEl.volume = Math.max(0, Math.min(1, vol));
-                videoEl.play().catch(e => {
-                  if (e.name === 'NotAllowedError') {
-                    videoEl.muted = true;
-                    videoEl.play().catch(() => {});
-                  }
-                });
+                videoEl.play().catch(e => console.warn('Fullscreen video play notice:', e));
               }
             }}
             onLoadedMetadata={(e) => {
               const el = e.currentTarget;
-              el.muted = fullscreenShare.isLocal;
-              const vol = isDeafened ? 0 : ((userVolumes.get(fullscreenShare.userId) ?? 100) / 100);
-              el.volume = Math.max(0, Math.min(1, vol));
-              el.play().catch(err => {
-                if (err.name === 'NotAllowedError') {
-                  el.muted = true;
-                  el.play().catch(() => {});
-                }
-              });
+              el.play().catch(err => console.warn('Video playback onLoadedMetadata:', err));
             }}
             autoPlay
             playsInline
-            muted={fullscreenShare.isLocal}
+            muted
             className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
           />
         </div>
@@ -228,32 +212,16 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
                 ref={(videoEl) => {
                   if (videoEl && videoEl.srcObject !== share.stream) {
                     videoEl.srcObject = share.stream;
-                    videoEl.muted = share.isLocal;
-                    const vol = isDeafened ? 0 : ((userVolumes.get(share.userId) ?? 100) / 100);
-                    videoEl.volume = Math.max(0, Math.min(1, vol));
-                    videoEl.play().catch(e => {
-                      if (e.name === 'NotAllowedError') {
-                        videoEl.muted = true;
-                        videoEl.play().catch(() => {});
-                      }
-                    });
+                    videoEl.play().catch(e => console.warn('Grid video play notice:', e));
                   }
                 }}
                 onLoadedMetadata={(e) => {
                   const el = e.currentTarget;
-                  el.muted = share.isLocal;
-                  const vol = isDeafened ? 0 : ((userVolumes.get(share.userId) ?? 100) / 100);
-                  el.volume = Math.max(0, Math.min(1, vol));
-                  el.play().catch(err => {
-                    if (err.name === 'NotAllowedError') {
-                      el.muted = true;
-                      el.play().catch(() => {});
-                    }
-                  });
+                  el.play().catch(err => console.warn('Video playback onLoadedMetadata:', err));
                 }}
                 autoPlay
                 playsInline
-                muted={share.isLocal}
+                muted
                 className="w-full h-full object-contain"
               />
               <div className="absolute top-3 left-3 px-3 py-1.5 bg-black/75 backdrop-blur-md rounded-xl text-xs font-semibold text-white flex items-center space-x-2 border border-white/10">
@@ -300,16 +268,12 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
                     participant.isSpeaking ? 'speaking-ring ring-4 ring-emerald-400' : ''
                   }`}
                 />
-                {/* Mute / Deafen badge */}
-                {isParticipantDeafened ? (
-                  <div className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-rose-500 text-white shadow-md" title="Deafen">
-                    <Headphones size={13} />
-                  </div>
-                ) : isParticipantMuted ? (
-                  <div className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-rose-500 text-white shadow-md" title="Mute">
+                {/* Mute badge */}
+                {(isParticipantMuted || isParticipantDeafened) && (
+                  <div className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-rose-500 text-white shadow-md">
                     <MicOff size={13} />
                   </div>
-                ) : null}
+                )}
               </div>
 
               {/* Username */}

@@ -166,26 +166,14 @@ export const DirectCallModal: React.FC = () => {
               ref={(el) => {
                 if (el && displayStream && el.srcObject !== displayStream) {
                   el.srcObject = displayStream;
-                  el.muted = !remoteScreenStream;
-                  el.play().catch(e => {
-                    if (e.name === 'NotAllowedError') {
-                      el.muted = true;
-                      el.play().catch(() => {});
-                    }
-                  });
+                  el.play().catch(e => console.warn('Direct call video play notice:', e));
                 }
               }}
               onLoadedMetadata={(e) => {
                 const el = e.currentTarget;
-                el.muted = !remoteScreenStream;
-                el.play().catch(err => {
-                  if (err.name === 'NotAllowedError') {
-                    el.muted = true;
-                    el.play().catch(() => {});
-                  }
-                });
+                el.play().catch(err => console.warn('Direct call video metadata play:', err));
               }}
-              autoPlay playsInline muted={!remoteScreenStream}
+              autoPlay playsInline muted
               className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
             />
           </div>
