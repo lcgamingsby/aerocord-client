@@ -31,13 +31,44 @@ interface VoiceContextType {
 
 const VoiceContext = createContext<VoiceContextType | undefined>(undefined);
 
-// Free public Google STUN servers for reliable WebRTC NAT traversal
+// Multi-region STUN and global TURN servers for reliable WebRTC NAT & firewall traversal across different networks/ISPs
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
+    // Google & Cloudflare STUN Servers (discover public IP)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    // Free Globally Distributed TURN Servers (Open Relay Project / Metered) for cross-NAT relaying
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turns:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turns:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -67,15 +98,34 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const isDeafenedRef = useRef<boolean>(false);
   const isMutedRef = useRef<boolean>(false);
   const userVolumesRef = useRef<Map<string, number>>(new Map());
+  const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+  const screenSendersRef = useRef<Map<string, RTCRtpSender[]>>(new Map());
 
   // WebRTC Peer Connections: peerUserId -> RTCPeerConnection
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
   // HTMLAudioElements for playing remote audio: peerUserId -> HTMLAudioElement
   const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  // Buffer for ICE candidates arriving before remote description is set
+  const pendingIceCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const speakingIntervalRef = useRef<number | null>(null);
+
+  // Helper to process queued ICE candidates once remote description is set
+  const processPendingCandidates = async (peerId: string, pc: RTCPeerConnection) => {
+    const candidates = pendingIceCandidates.current.get(peerId) || [];
+    if (candidates.length > 0) {
+      for (const candidate of candidates) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.warn(`[WebRTC] Error adding buffered ICE candidate for ${peerId}:`, err);
+        }
+      }
+      pendingIceCandidates.current.set(peerId, []);
+    }
+  };
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -247,24 +297,43 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Add screen share tracks (video and audio) if active
     if (screenStreamRef.current) {
+      const senders: RTCRtpSender[] = [];
       screenStreamRef.current.getTracks().forEach(track => {
-        pc.addTrack(track, screenStreamRef.current!);
+        const sender = pc.addTrack(track, screenStreamRef.current!);
+        senders.push(sender);
       });
+      screenSendersRef.current.set(targetUserId, senders);
     }
 
     // Handle remote track received
     pc.ontrack = (event) => {
-      const stream = event.streams[0] || new MediaStream([event.track]);
-      
-      setRemoteStreams(prev => {
-        const next = new Map(prev);
-        next.set(targetUserId, stream);
-        return next;
-      });
+      let peerStream = remoteStreamsRef.current.get(targetUserId);
+      if (!peerStream) {
+        peerStream = event.streams[0] || new MediaStream();
+        remoteStreamsRef.current.set(targetUserId, peerStream);
+      }
 
-      // Play audio automatically
-      if (event.track.kind === 'audio' || stream.getAudioTracks().length > 0) {
-        playRemoteAudio(targetUserId, stream);
+      // Ensure track is present in peer's composite MediaStream
+      if (!peerStream.getTracks().some(t => t.id === event.track.id)) {
+        peerStream.addTrack(event.track);
+      }
+
+      event.track.onended = () => {
+        if (peerStream) {
+          peerStream.removeTrack(event.track);
+          setRemoteStreams(new Map(remoteStreamsRef.current));
+        }
+      };
+
+      event.track.onunmute = () => {
+        setRemoteStreams(new Map(remoteStreamsRef.current));
+      };
+
+      setRemoteStreams(new Map(remoteStreamsRef.current));
+
+      // Play audio automatically if an audio track was received
+      if (event.track.kind === 'audio' || peerStream.getAudioTracks().length > 0) {
+        playRemoteAudio(targetUserId, peerStream);
       }
     };
 
@@ -276,6 +345,14 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           signal: { type: 'candidate', candidate: event.candidate },
           channelId
         });
+      }
+    };
+
+    // Auto-restart ICE on connection failure across different networks
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'failed') {
+        console.warn(`[WebRTC] ICE connection failed with ${targetUserId}, attempting ICE restart...`);
+        pc.restartIce();
       }
     };
 
@@ -349,6 +426,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     // Close all peer connections
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
+    screenSendersRef.current.clear();
+    pendingIceCandidates.current.clear();
+    remoteStreamsRef.current.clear();
 
     setRemoteStreams(new Map());
     setVoiceParticipants([]);
@@ -403,6 +483,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         pc.close();
         peerConnections.current.delete(data.userId);
       }
+      screenSendersRef.current.delete(data.userId);
+      pendingIceCandidates.current.delete(data.userId);
 
       // Clean up audio element for departed peer
       const audioEl = audioElementsRef.current.get(data.userId);
@@ -412,11 +494,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         audioElementsRef.current.delete(data.userId);
       }
 
-      setRemoteStreams(prev => {
-        const next = new Map(prev);
-        next.delete(data.userId);
-        return next;
-      });
+      remoteStreamsRef.current.delete(data.userId);
+      setRemoteStreams(new Map(remoteStreamsRef.current));
 
       soundEffects.playLeaveVoiceSound();
 
@@ -469,6 +548,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (signal.type === 'offer') {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          await processPendingCandidates(senderUserId, pc);
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           socket.emit('voice_signal', {
@@ -482,12 +562,20 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } else if (signal.type === 'answer') {
         try {
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          await processPendingCandidates(senderUserId, pc);
         } catch (e) {
           console.error('Error handling WebRTC answer:', e);
         }
       } else if (signal.type === 'candidate' && signal.candidate) {
         try {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          if (pc.remoteDescription && pc.remoteDescription.type) {
+            await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } else {
+            if (!pendingIceCandidates.current.has(senderUserId)) {
+              pendingIceCandidates.current.set(senderUserId, []);
+            }
+            pendingIceCandidates.current.get(senderUserId)!.push(signal.candidate);
+          }
         } catch (e) {
           console.error('Error adding ICE candidate:', e);
         }
@@ -599,36 +687,89 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const toggleScreenShare = async () => {
-    if (isScreenSharing) {
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach(t => t.stop());
-        screenStreamRef.current = null;
-        setScreenStream(null);
-      }
-      setIsScreenSharing(false);
-      if (socket && currentVoiceChannelRef.current) {
-        socket.emit('voice_state_update', {
-          channelId: currentVoiceChannelRef.current,
-          isScreenSharing: false
+  const stopScreenShare = () => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(t => t.stop());
+      screenStreamRef.current = null;
+      setScreenStream(null);
+    }
+    setIsScreenSharing(false);
+
+    // Remove screen track senders from all active peer connections
+    peerConnections.current.forEach((pc, peerId) => {
+      const senders = screenSendersRef.current.get(peerId);
+      if (senders && senders.length > 0) {
+        senders.forEach(sender => {
+          try {
+            pc.removeTrack(sender);
+          } catch (e) {
+            console.warn('Error removing screen track sender:', e);
+          }
+        });
+        screenSendersRef.current.delete(peerId);
+      } else {
+        pc.getSenders().forEach(sender => {
+          if (sender.track && sender.track.kind === 'video') {
+            try {
+              pc.removeTrack(sender);
+            } catch (e) {
+              console.warn('Error removing fallback video sender:', e);
+            }
+          }
         });
       }
+
+      // Renegotiate with peer after removing tracks
+      if (socket && currentVoiceChannelRef.current) {
+        pc.createOffer().then(async (offer) => {
+          await pc.setLocalDescription(offer);
+          socket.emit('voice_signal', {
+            targetUserId: peerId,
+            signal: { type: 'offer', sdp: offer },
+            channelId: currentVoiceChannelRef.current
+          });
+        }).catch(e => console.warn('Renegotiation error on stopping screen share:', e));
+      }
+    });
+
+    if (socket && currentVoiceChannelRef.current) {
+      socket.emit('voice_state_update', {
+        channelId: currentVoiceChannelRef.current,
+        isScreenSharing: false
+      });
+    }
+  };
+
+  const toggleScreenShare = async () => {
+    if (isScreenSharing) {
+      stopScreenShare();
     } else {
       try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        } catch (mediaErr: any) {
+          if (mediaErr.name === 'NotAllowedError') throw mediaErr;
+          stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        }
+
         screenStreamRef.current = stream;
         setScreenStream(stream);
         setIsScreenSharing(true);
 
-        // Add all screen tracks (both video AND audio) to all active peer connections
+        // Add all screen tracks to all active peer connections and save senders
         peerConnections.current.forEach((pc, peerId) => {
+          const senders: RTCRtpSender[] = [];
           stream.getTracks().forEach(track => {
-            pc.addTrack(track, stream);
+            const sender = pc.addTrack(track, stream);
+            senders.push(sender);
           });
+          screenSendersRef.current.set(peerId, senders);
+
           // Renegotiate with peer
           if (socket && currentVoiceChannelRef.current) {
-            pc.createOffer().then(offer => {
-              pc.setLocalDescription(offer);
+            pc.createOffer().then(async (offer) => {
+              await pc.setLocalDescription(offer);
               socket.emit('voice_signal', {
                 targetUserId: peerId,
                 signal: { type: 'offer', sdp: offer },
@@ -638,22 +779,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
         });
 
-        // Handle user stopping screen share via browser floating bar
+        // Handle user stopping screen share via browser native stop button
         const primaryTrack = stream.getVideoTracks()[0] || stream.getTracks()[0];
         if (primaryTrack) {
           primaryTrack.onended = () => {
-            setIsScreenSharing(false);
-            if (screenStreamRef.current) {
-              screenStreamRef.current.getTracks().forEach(t => t.stop());
-              screenStreamRef.current = null;
-            }
-            setScreenStream(null);
-            if (socket && currentVoiceChannelRef.current) {
-              socket.emit('voice_state_update', {
-                channelId: currentVoiceChannelRef.current,
-                isScreenSharing: false
-              });
-            }
+            stopScreenShare();
           };
         }
 

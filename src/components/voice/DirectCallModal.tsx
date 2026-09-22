@@ -153,7 +153,16 @@ export const DirectCallModal: React.FC = () => {
           {/* Screen Share Video */}
           <div className="flex-1 flex items-center justify-center overflow-hidden p-4 min-h-0">
             <video
-              ref={(el) => { if (el && displayStream && el.srcObject !== displayStream) el.srcObject = displayStream; }}
+              ref={(el) => {
+                if (el && displayStream && el.srcObject !== displayStream) {
+                  el.srcObject = displayStream;
+                  el.play().catch(e => console.warn('Direct call video play notice:', e));
+                }
+              }}
+              onLoadedMetadata={(e) => {
+                const el = e.currentTarget;
+                el.play().catch(err => console.warn('Direct call video metadata play:', err));
+              }}
               autoPlay playsInline muted={!remoteScreenStream}
               className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
             />
@@ -214,7 +223,14 @@ export const DirectCallModal: React.FC = () => {
               <video
                 ref={(el) => {
                   const stream = remoteScreenStream || screenStream;
-                  if (el && stream && el.srcObject !== stream) el.srcObject = stream;
+                  if (el && stream && el.srcObject !== stream) {
+                    el.srcObject = stream;
+                    el.play().catch(e => console.warn('Thumbnail preview play notice:', e));
+                  }
+                }}
+                onLoadedMetadata={(e) => {
+                  const el = e.currentTarget;
+                  el.play().catch(err => console.warn('Thumbnail video metadata play:', err));
                 }}
                 autoPlay playsInline muted
                 className="w-full h-[140px] object-cover"

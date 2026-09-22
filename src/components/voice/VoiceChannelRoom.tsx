@@ -105,7 +105,12 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
             ref={(videoEl) => {
               if (videoEl && videoEl.srcObject !== fullscreenShare.stream) {
                 videoEl.srcObject = fullscreenShare.stream;
+                videoEl.play().catch(e => console.warn('Fullscreen video play notice:', e));
               }
+            }}
+            onLoadedMetadata={(e) => {
+              const el = e.currentTarget;
+              el.play().catch(err => console.warn('Video playback onLoadedMetadata:', err));
             }}
             autoPlay
             playsInline
@@ -199,7 +204,12 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
                 ref={(videoEl) => {
                   if (videoEl && videoEl.srcObject !== share.stream) {
                     videoEl.srcObject = share.stream;
+                    videoEl.play().catch(e => console.warn('Grid video play notice:', e));
                   }
+                }}
+                onLoadedMetadata={(e) => {
+                  const el = e.currentTarget;
+                  el.play().catch(err => console.warn('Video playback onLoadedMetadata:', err));
                 }}
                 autoPlay
                 playsInline
