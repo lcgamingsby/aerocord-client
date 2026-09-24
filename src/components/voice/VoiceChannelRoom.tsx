@@ -64,7 +64,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
 
   remoteStreams.forEach((stream, peerId) => {
     const peerParticipant = voiceParticipants.find(p => p.userId === peerId);
-    const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live' && !t.muted);
+    const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live');
     if (hasLiveVideo && (peerParticipant ? peerParticipant.isScreenSharing : true)) {
       const peerUser = peerParticipant?.user;
       activeShares.push({
@@ -268,12 +268,16 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
                     participant.isSpeaking ? 'speaking-ring ring-4 ring-emerald-400' : ''
                   }`}
                 />
-                {/* Mute badge */}
-                {(isParticipantMuted || isParticipantDeafened) && (
-                  <div className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-rose-500 text-white shadow-md">
+                {/* Mute / Deafen badge */}
+                {isParticipantDeafened ? (
+                  <div className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-rose-500 text-white shadow-md" title="Deafened">
+                    <Headphones size={13} />
+                  </div>
+                ) : isParticipantMuted ? (
+                  <div className="absolute -bottom-1 -right-1 p-1.5 rounded-xl bg-rose-500 text-white shadow-md" title="Muted">
                     <MicOff size={13} />
                   </div>
-                )}
+                ) : null}
               </div>
 
               {/* Username */}

@@ -103,10 +103,12 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // WebRTC Peer Connections: peerUserId -> RTCPeerConnection
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
-  // HTMLAudioElements for playing remote audio: peerUserId -> HTMLAudioElement
-  const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  // HTMLAudioElements for playing remote audio per track: `${peerUserId}:${trackId}` -> HTMLAudioElement
+  const remoteAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   // Buffer for ICE candidates arriving before remote description is set
   const pendingIceCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+  // Negotiation tracking for Perfect Negotiation pattern
+  const makingOfferRef = useRef<Map<string, boolean>>(new Map());
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -127,6 +129,45 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // Helper to play an individual audio track (microphone OR screen share audio)
+  // Each track gets its own HTMLAudioElement to prevent the browser from silencing secondary audio tracks.
+  const playRemoteAudioTrack = (peerUserId: string, track: MediaStreamTrack) => {
+    const key = `${peerUserId}:${track.id}`;
+    let audioEl = remoteAudioElementsRef.current.get(key);
+    if (!audioEl) {
+      audioEl = new Audio();
+      audioEl.autoplay = true;
+      remoteAudioElementsRef.current.set(key, audioEl);
+    }
+
+    const singleTrackStream = new MediaStream([track]);
+    audioEl.srcObject = singleTrackStream;
+
+    const vol = isDeafenedRef.current ? 0 : ((userVolumesRef.current.get(peerUserId) ?? 100) / 100);
+    audioEl.volume = Math.max(0, Math.min(1, vol));
+
+    audioEl.play().catch(e => {
+      console.warn(`[WebRTC Audio] Remote audio playback auto-play notice for ${key}:`, e);
+    });
+
+    track.onended = () => {
+      audioEl?.pause();
+      if (audioEl) audioEl.srcObject = null;
+      remoteAudioElementsRef.current.delete(key);
+    };
+  };
+
+  // Helper to stop all audio elements for a departed or disconnected peer
+  const stopPeerAudioTracks = (peerUserId: string) => {
+    remoteAudioElementsRef.current.forEach((audioEl, key) => {
+      if (key.startsWith(`${peerUserId}:`)) {
+        audioEl.pause();
+        audioEl.srcObject = null;
+        remoteAudioElementsRef.current.delete(key);
+      }
+    });
+  };
+
   // Keep refs in sync with state
   useEffect(() => {
     activeCallRef.current = activeCall;
@@ -139,8 +180,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     isDeafenedRef.current = isDeafened;
     // Update all audio elements volume immediately
-    audioElementsRef.current.forEach((audioEl, peerId) => {
-      const vol = isDeafened ? 0 : ((userVolumesRef.current.get(peerId) ?? 100) / 100);
+    remoteAudioElementsRef.current.forEach((audioEl, key) => {
+      const peerUserId = key.split(':')[0];
+      const vol = isDeafened ? 0 : ((userVolumesRef.current.get(peerUserId) ?? 100) / 100);
       audioEl.volume = Math.max(0, Math.min(1, vol));
     });
   }, [isDeafened]);
@@ -152,8 +194,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     userVolumesRef.current = userVolumes;
     // Update audio element volume for each peer
-    audioElementsRef.current.forEach((audioEl, peerId) => {
-      const vol = isDeafenedRef.current ? 0 : ((userVolumes.get(peerId) ?? 100) / 100);
+    remoteAudioElementsRef.current.forEach((audioEl, key) => {
+      const peerUserId = key.split(':')[0];
+      const vol = isDeafenedRef.current ? 0 : ((userVolumes.get(peerUserId) ?? 100) / 100);
       audioEl.volume = Math.max(0, Math.min(1, vol));
     });
   }, [userVolumes]);
@@ -260,33 +303,35 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Helper to play incoming audio track from WebRTC
-  const playRemoteAudio = (targetUserId: string, stream: MediaStream) => {
-    let audioEl = audioElementsRef.current.get(targetUserId);
-    if (!audioEl) {
-      audioEl = new Audio();
-      audioEl.autoplay = true;
-      audioElementsRef.current.set(targetUserId, audioEl);
+  // Helper to send an SDP offer to a specific peer for initial handshake or renegotiation
+  const makeOffer = async (targetUserId: string, channelId?: string) => {
+    const pc = peerConnections.current.get(targetUserId);
+    if (!pc) return;
+    try {
+      makingOfferRef.current.set(targetUserId, true);
+      const offer = await pc.createOffer();
+      if (pc.signalingState !== 'stable') return;
+      await pc.setLocalDescription(offer);
+      if (socket) {
+        const chId = channelId || currentVoiceChannelRef.current || activeCallRef.current?.conversationId || '';
+        socket.emit('voice_signal', {
+          targetUserId,
+          signal: { type: 'offer', sdp: offer },
+          channelId: chId
+        });
+      }
+    } catch (err) {
+      console.warn(`[WebRTC] Error making offer to ${targetUserId}:`, err);
+    } finally {
+      makingOfferRef.current.set(targetUserId, false);
     }
-
-    // Always re-assign audio tracks so newly added tracks (like screen share audio) are immediately played
-    const audioTracks = stream.getAudioTracks();
-    if (audioTracks.length > 0) {
-      audioEl.srcObject = new MediaStream(audioTracks);
-    }
-
-    const vol = isDeafenedRef.current ? 0 : ((userVolumesRef.current.get(targetUserId) ?? 100) / 100);
-    audioEl.volume = Math.max(0, Math.min(1, vol));
-
-    audioEl.play().catch(e => {
-      console.warn('Remote audio playback auto-play notice (user interaction required):', e);
-    });
   };
 
   const createPeerConnection = (targetUserId: string, channelId: string): RTCPeerConnection => {
     if (peerConnections.current.has(targetUserId)) {
       peerConnections.current.get(targetUserId)!.close();
     }
+    makingOfferRef.current.set(targetUserId, false);
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
@@ -314,38 +359,52 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Handle remote track received
     pc.ontrack = (event) => {
-      let peerStream = remoteStreamsRef.current.get(targetUserId);
-      if (!peerStream) {
-        peerStream = event.streams[0] || new MediaStream();
-        remoteStreamsRef.current.set(targetUserId, peerStream);
+      if (event.track.kind === 'audio') {
+        playRemoteAudioTrack(targetUserId, event.track);
       }
 
-      // Ensure track is present in peer's composite MediaStream
+      // Maintain composite peer MediaStream for video / UI rendering
+      let peerStream = remoteStreamsRef.current.get(targetUserId);
+      if (!peerStream) {
+        peerStream = new MediaStream();
+      }
+
       if (!peerStream.getTracks().some(t => t.id === event.track.id)) {
         peerStream.addTrack(event.track);
       }
 
-      event.track.onended = () => {
-        if (peerStream) {
-          peerStream.removeTrack(event.track);
+      // Construct a new MediaStream reference with all live tracks to trigger clean React re-renders and rebind video elements
+      const liveTracks = peerStream.getTracks().filter(t => t.readyState === 'live');
+      const freshStream = new MediaStream(liveTracks);
+      remoteStreamsRef.current.set(targetUserId, freshStream);
+      setRemoteStreams(new Map(remoteStreamsRef.current));
+
+      const handleTrackEnd = () => {
+        if (event.track.kind === 'audio') {
+          const key = `${targetUserId}:${event.track.id}`;
+          const audioEl = remoteAudioElementsRef.current.get(key);
+          if (audioEl) {
+            audioEl.pause();
+            audioEl.srcObject = null;
+            remoteAudioElementsRef.current.delete(key);
+          }
+        }
+        const currentStream = remoteStreamsRef.current.get(targetUserId);
+        if (currentStream) {
+          currentStream.removeTrack(event.track);
+          const remainingLive = currentStream.getTracks().filter(t => t.readyState === 'live');
+          remoteStreamsRef.current.set(targetUserId, new MediaStream(remainingLive));
           setRemoteStreams(new Map(remoteStreamsRef.current));
         }
       };
 
+      event.track.onended = handleTrackEnd;
       event.track.onmute = () => {
         setRemoteStreams(new Map(remoteStreamsRef.current));
       };
-
       event.track.onunmute = () => {
         setRemoteStreams(new Map(remoteStreamsRef.current));
       };
-
-      setRemoteStreams(new Map(remoteStreamsRef.current));
-
-      // Play audio automatically if an audio track was received
-      if (event.track.kind === 'audio' || peerStream.getAudioTracks().length > 0) {
-        playRemoteAudio(targetUserId, peerStream);
-      }
     };
 
     // Handle ICE candidates
@@ -428,17 +487,18 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // Stop and clear all audio playback elements
-    audioElementsRef.current.forEach(audioEl => {
+    remoteAudioElementsRef.current.forEach(audioEl => {
       audioEl.pause();
       audioEl.srcObject = null;
     });
-    audioElementsRef.current.clear();
+    remoteAudioElementsRef.current.clear();
 
     // Close all peer connections
     peerConnections.current.forEach(pc => pc.close());
     peerConnections.current.clear();
     screenSendersRef.current.clear();
     pendingIceCandidates.current.clear();
+    makingOfferRef.current.clear();
     remoteStreamsRef.current.clear();
 
     setRemoteStreams(new Map());
@@ -463,18 +523,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       data.participants.forEach(async (peer) => {
         if (peer.userId === user?.id) return;
 
-        const pc = createPeerConnection(peer.userId, data.channelId);
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          socket.emit('voice_signal', {
-            targetUserId: peer.userId,
-            signal: { type: 'offer', sdp: offer },
-            channelId: data.channelId
-          });
-        } catch (err) {
-          console.error('Error creating WebRTC offer:', err);
-        }
+        createPeerConnection(peer.userId, data.channelId);
+        await makeOffer(peer.userId, data.channelId);
       });
     });
 
@@ -496,14 +546,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       screenSendersRef.current.delete(data.userId);
       pendingIceCandidates.current.delete(data.userId);
+      makingOfferRef.current.delete(data.userId);
 
-      // Clean up audio element for departed peer
-      const audioEl = audioElementsRef.current.get(data.userId);
-      if (audioEl) {
-        audioEl.pause();
-        audioEl.srcObject = null;
-        audioElementsRef.current.delete(data.userId);
-      }
+      // Clean up audio elements for departed peer
+      stopPeerAudioTracks(data.userId);
 
       remoteStreamsRef.current.delete(data.userId);
       setRemoteStreams(new Map(remoteStreamsRef.current));
@@ -545,7 +591,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setRemoteStreams(new Map(remoteStreamsRef.current));
     });
 
-    // WebRTC Signaling Handshake (Offer, Answer, ICE)
+    // WebRTC Signaling Handshake (Offer, Answer, ICE) with Perfect Negotiation pattern
     socket.on('voice_signal', async (data: { senderUserId: string; signal: any; channelId: string }) => {
       const { senderUserId, signal, channelId } = data;
 
@@ -559,56 +605,69 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         pc = createPeerConnection(senderUserId, channelId);
       }
 
+      // Helper to ensure all active receivers are playing audio and present in remoteStreams
+      const syncReceivers = (peerId: string, conn: RTCPeerConnection) => {
+        let peerStream = remoteStreamsRef.current.get(peerId);
+        if (!peerStream) {
+          peerStream = new MediaStream();
+        }
+
+        conn.getReceivers().forEach(receiver => {
+          if (receiver.track) {
+            if (receiver.track.kind === 'audio') {
+              playRemoteAudioTrack(peerId, receiver.track);
+            }
+            if (!peerStream!.getTracks().some(t => t.id === receiver.track.id)) {
+              peerStream!.addTrack(receiver.track);
+            }
+          }
+        });
+
+        const liveTracks = peerStream.getTracks().filter(t => t.readyState === 'live');
+        remoteStreamsRef.current.set(peerId, new MediaStream(liveTracks));
+        setRemoteStreams(new Map(remoteStreamsRef.current));
+      };
+
       if (signal.type === 'offer') {
         try {
+          const isOfferCollision = makingOfferRef.current.get(senderUserId) || pc.signalingState !== 'stable';
+          const isPolite = (user?.id || '') > senderUserId; // deterministic polite peer resolution
+
+          if (isOfferCollision) {
+            if (!isPolite) {
+              // Impolite peer ignores colliding offer
+              return;
+            }
+            // Polite peer rolls back local offer to accept remote offer
+            await pc.setLocalDescription({ type: 'rollback' });
+          }
+
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           await processPendingCandidates(senderUserId, pc);
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
+
           socket.emit('voice_signal', {
             targetUserId: senderUserId,
             signal: { type: 'answer', sdp: answer },
             channelId
           });
 
-          // Sync any newly negotiated receiver tracks
-          let peerStream = remoteStreamsRef.current.get(senderUserId);
-          if (!peerStream) {
-            peerStream = new MediaStream();
-            remoteStreamsRef.current.set(senderUserId, peerStream);
-          }
-          pc.getReceivers().forEach(receiver => {
-            if (receiver.track && !peerStream!.getTracks().some(t => t.id === receiver.track.id)) {
-              peerStream!.addTrack(receiver.track);
-            }
-          });
-          setRemoteStreams(new Map(remoteStreamsRef.current));
-          if (peerStream.getAudioTracks().length > 0) {
-            playRemoteAudio(senderUserId, peerStream);
-          }
+          syncReceivers(senderUserId, pc);
         } catch (e) {
           console.error('Error handling WebRTC offer:', e);
         }
       } else if (signal.type === 'answer') {
         try {
+          if (pc.signalingState !== 'have-local-offer') {
+            console.warn('[WebRTC] Ignoring stale answer from', senderUserId, 'in state', pc.signalingState);
+            return;
+          }
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           await processPendingCandidates(senderUserId, pc);
 
-          // Sync any newly negotiated receiver tracks
-          let peerStream = remoteStreamsRef.current.get(senderUserId);
-          if (!peerStream) {
-            peerStream = new MediaStream();
-            remoteStreamsRef.current.set(senderUserId, peerStream);
-          }
-          pc.getReceivers().forEach(receiver => {
-            if (receiver.track && !peerStream!.getTracks().some(t => t.id === receiver.track.id)) {
-              peerStream!.addTrack(receiver.track);
-            }
-          });
-          setRemoteStreams(new Map(remoteStreamsRef.current));
-          if (peerStream.getAudioTracks().length > 0) {
-            playRemoteAudio(senderUserId, peerStream);
-          }
+          syncReceivers(senderUserId, pc);
         } catch (e) {
           console.error('Error handling WebRTC answer:', e);
         }
@@ -753,7 +812,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const stopScreenShare = () => {
+  const stopScreenShare = async () => {
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach(t => t.stop());
       screenStreamRef.current = null;
@@ -763,56 +822,36 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     // Remove screen track senders from all active peer connections
     peerConnections.current.forEach((pc, peerId) => {
-      const videoTransceiver = pc.getTransceivers().find(t => 
-        t.receiver.track.kind === 'video' || (t.sender.track && t.sender.track.kind === 'video')
-      );
-      if (videoTransceiver && videoTransceiver.sender) {
-        try {
-          videoTransceiver.sender.replaceTrack(null);
-          videoTransceiver.direction = 'recvonly';
-        } catch (e) {
-          console.warn('Error resetting video transceiver direction:', e);
-        }
-      }
-
       const senders = screenSendersRef.current.get(peerId);
       if (senders && senders.length > 0) {
         senders.forEach(sender => {
           try {
-            if (sender !== videoTransceiver?.sender) {
-              pc.removeTrack(sender);
-            }
+            pc.removeTrack(sender);
           } catch (e) {
             console.warn('Error removing screen track sender:', e);
           }
         });
         screenSendersRef.current.delete(peerId);
       }
-
-      // Renegotiate with peer after removing tracks
-      if (socket && currentVoiceChannelRef.current) {
-        pc.createOffer().then(async (offer) => {
-          await pc.setLocalDescription(offer);
-          socket.emit('voice_signal', {
-            targetUserId: peerId,
-            signal: { type: 'offer', sdp: offer },
-            channelId: currentVoiceChannelRef.current
-          });
-        }).catch(e => console.warn('Renegotiation error on stopping screen share:', e));
-      }
     });
 
-    if (socket && currentVoiceChannelRef.current) {
+    const chanId = currentVoiceChannelRef.current || activeCallRef.current?.conversationId;
+    if (socket && chanId) {
       socket.emit('voice_state_update', {
-        channelId: currentVoiceChannelRef.current,
+        channelId: chanId,
         isScreenSharing: false
       });
+    }
+
+    // Explicitly renegotiate with all peers to announce track removal
+    for (const peerId of peerConnections.current.keys()) {
+      await makeOffer(peerId, chanId);
     }
   };
 
   const toggleScreenShare = async () => {
     if (isScreenSharing) {
-      stopScreenShare();
+      await stopScreenShare();
     } else {
       try {
         let stream: MediaStream;
@@ -830,23 +869,21 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const videoTrack = stream.getVideoTracks()[0];
         const audioTrack = stream.getAudioTracks()[0];
 
-        // Add or replace screen tracks on all active peer connections
+        // Add screen tracks to all active peer connections
         peerConnections.current.forEach((pc, peerId) => {
+          // Clean up any previous senders first
+          const prevSenders = screenSendersRef.current.get(peerId);
+          if (prevSenders) {
+            prevSenders.forEach(s => {
+              try { pc.removeTrack(s); } catch (e) {}
+            });
+          }
+
           const senders: RTCRtpSender[] = [];
 
-          const videoTransceiver = pc.getTransceivers().find(t => 
-            t.receiver.track.kind === 'video' || (t.sender.track && t.sender.track.kind === 'video')
-          );
-
           if (videoTrack) {
-            if (videoTransceiver && videoTransceiver.sender) {
-              videoTransceiver.direction = 'sendrecv';
-              videoTransceiver.sender.replaceTrack(videoTrack);
-              senders.push(videoTransceiver.sender);
-            } else {
-              const sender = pc.addTrack(videoTrack, stream);
-              senders.push(sender);
-            }
+            const sender = pc.addTrack(videoTrack, stream);
+            senders.push(sender);
           }
 
           if (audioTrack) {
@@ -855,18 +892,6 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
 
           screenSendersRef.current.set(peerId, senders);
-
-          // Renegotiate with peer
-          if (socket && currentVoiceChannelRef.current) {
-            pc.createOffer().then(async (offer) => {
-              await pc.setLocalDescription(offer);
-              socket.emit('voice_signal', {
-                targetUserId: peerId,
-                signal: { type: 'offer', sdp: offer },
-                channelId: currentVoiceChannelRef.current
-              });
-            }).catch(e => console.warn('Renegotiation offer error:', e));
-          }
         });
 
         // Handle user stopping screen share via browser native stop button
@@ -877,11 +902,17 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
         }
 
-        if (socket && currentVoiceChannelRef.current) {
+        const chanId = currentVoiceChannelRef.current || activeCallRef.current?.conversationId;
+        if (socket && chanId) {
           socket.emit('voice_state_update', {
-            channelId: currentVoiceChannelRef.current,
+            channelId: chanId,
             isScreenSharing: true
           });
+        }
+
+        // Explicitly renegotiate with all peers immediately!
+        for (const peerId of peerConnections.current.keys()) {
+          await makeOffer(peerId, chanId);
         }
       } catch (err) {
         console.warn('Screen share cancelled or failed:', err);
@@ -1011,4 +1042,3 @@ export const useVoice = (): VoiceContextType => {
   }
   return context;
 };
-
