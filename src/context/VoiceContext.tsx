@@ -109,8 +109,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Negotiation tracking for Perfect Negotiation pattern
   const makingOfferRef = useRef<Map<string, boolean>>(new Map());
 
-  // Track the current active outgoing audio track (either microphone or mixed mic+screen audio)
+  // Track the current active outgoing audio track and stream (microphone or mixed mic+screen audio)
   const currentActiveAudioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const activeAudioStreamRef = useRef<MediaStream | null>(null);
 
   // Web Audio Mixer for combining Microphone and Screen Share audio seamlessly on sender side
   const audioMixerRef = useRef<AudioContext | null>(null);
@@ -118,6 +119,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const micGainNodeRef = useRef<GainNode | null>(null);
   const screenSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const screenGainNodeRef = useRef<GainNode | null>(null);
+  const destNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
 
   // Web Audio Speaking Detector
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -155,6 +157,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!audioEl) {
       audioEl = new Audio();
       audioEl.autoplay = true;
+      audioEl.style.display = 'none';
+      document.body.appendChild(audioEl);
       audioElementsRef.current.set(targetUserId, audioEl);
     }
 
@@ -167,6 +171,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     audioEl.play().catch(e => {
       console.warn('Remote audio playback notice:', e);
+      const resumeAudio = () => {
+        audioEl?.play().catch(() => {});
+        window.removeEventListener('click', resumeAudio);
+        window.removeEventListener('keydown', resumeAudio);
+      };
+      window.addEventListener('click', resumeAudio, { once: true });
+      window.addEventListener('keydown', resumeAudio, { once: true });
     });
   };
 
@@ -273,9 +284,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStreamRef.current = stream;
       setLocalStream(stream);
 
-      // Keep current active track reference
+      // Keep current active track & stream reference
       if (!currentActiveAudioTrackRef.current) {
         currentActiveAudioTrackRef.current = stream.getAudioTracks()[0] || null;
+        activeAudioStreamRef.current = stream;
       }
 
       // Setup Web Audio Volume Visualizer / Speaking Detector
@@ -366,10 +378,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    // Add audio track (either composite mixed track or microphone track)
+    // Add audio track (using active composite audio stream if screen sharing with audio, else microphone stream)
+    const audioStreamToSend = activeAudioStreamRef.current || localStreamRef.current;
     const audioTrackToSend = currentActiveAudioTrackRef.current || localStreamRef.current?.getAudioTracks()[0];
-    if (audioTrackToSend) {
-      pc.addTrack(audioTrackToSend, localStreamRef.current || new MediaStream([audioTrackToSend]));
+    if (audioStreamToSend && audioTrackToSend) {
+      pc.addTrack(audioTrackToSend, audioStreamToSend);
     } else {
       pc.addTransceiver('audio', { direction: 'sendrecv' });
     }
@@ -474,6 +487,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     currentActiveAudioTrackRef.current = null;
+    activeAudioStreamRef.current = null;
 
     // Clean up audio mixer
     if (screenSourceNodeRef.current) {
@@ -491,6 +505,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (micGainNodeRef.current) {
       micGainNodeRef.current.disconnect();
       micGainNodeRef.current = null;
+    }
+    if (destNodeRef.current) {
+      destNodeRef.current = null;
     }
     if (audioMixerRef.current) {
       audioMixerRef.current.close().catch(() => {});
@@ -511,6 +528,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     audioElementsRef.current.forEach(audioEl => {
       audioEl.pause();
       audioEl.srcObject = null;
+      if (audioEl.parentNode) {
+        audioEl.parentNode.removeChild(audioEl);
+      }
     });
     audioElementsRef.current.clear();
 
@@ -572,6 +592,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (audioEl) {
         audioEl.pause();
         audioEl.srcObject = null;
+        if (audioEl.parentNode) {
+          audioEl.parentNode.removeChild(audioEl);
+        }
         audioElementsRef.current.delete(data.userId);
       }
 
@@ -840,9 +863,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     setIsScreenSharing(false);
 
-    // 1. Revert peer audio senders back to original microphone track
+    // 1. Revert active audio stream & track back to original microphone
     const originalMicTrack = localStreamRef.current?.getAudioTracks()[0];
     currentActiveAudioTrackRef.current = originalMicTrack || null;
+    activeAudioStreamRef.current = localStreamRef.current;
+
     if (originalMicTrack) {
       peerConnections.current.forEach(pc => {
         const audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
@@ -868,6 +893,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (micGainNodeRef.current) {
       micGainNodeRef.current.disconnect();
       micGainNodeRef.current = null;
+    }
+    if (destNodeRef.current) {
+      destNodeRef.current = null;
     }
 
     // 2. Set video transceivers to recvonly and replaceTrack(null)
@@ -933,6 +961,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
 
             const dest = ctx.createMediaStreamDestination();
+            destNodeRef.current = dest;
+            activeAudioStreamRef.current = dest.stream;
 
             // Connect mic to destination if present
             if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
