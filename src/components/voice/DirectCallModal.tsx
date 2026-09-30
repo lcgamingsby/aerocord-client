@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useVoice } from '../../context/VoiceContext';
 import { Phone, PhoneOff, Mic, MicOff, Headphones, MonitorUp, Maximize2, Minimize2, Music } from 'lucide-react';
 import { SoundboardModal } from './SoundboardModal';
+import { VideoSharePlayer } from './VoiceChannelRoom';
 
 export const DirectCallModal: React.FC = () => {
   const {
@@ -162,20 +163,12 @@ export const DirectCallModal: React.FC = () => {
 
           {/* Screen Share Video */}
           <div className="flex-1 flex items-center justify-center overflow-hidden p-4 min-h-0">
-            <video
-              ref={(el) => {
-                if (el && displayStream && el.srcObject !== displayStream) {
-                  el.srcObject = displayStream;
-                  el.play().catch(e => console.warn('Direct call video play notice:', e));
-                }
-              }}
-              onLoadedMetadata={(e) => {
-                const el = e.currentTarget;
-                el.play().catch(err => console.warn('Direct call video metadata play:', err));
-              }}
-              autoPlay playsInline muted
-              className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
-            />
+            {displayStream && (
+              <VideoSharePlayer
+                stream={displayStream}
+                className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
+              />
+            )}
           </div>
 
           {/* Bottom Control Bar */}
@@ -230,21 +223,12 @@ export const DirectCallModal: React.FC = () => {
           {/* Screen share thumbnail preview */}
           {hasScreenShare && (
             <div className="relative cursor-pointer group" onClick={() => setIsScreenShareExpanded(true)} title="Klik untuk memperbesar screen share">
-              <video
-                ref={(el) => {
-                  const stream = remoteScreenStream || screenStream;
-                  if (el && stream && el.srcObject !== stream) {
-                    el.srcObject = stream;
-                    el.play().catch(e => console.warn('Thumbnail preview play notice:', e));
-                  }
-                }}
-                onLoadedMetadata={(e) => {
-                  const el = e.currentTarget;
-                  el.play().catch(err => console.warn('Thumbnail video metadata play:', err));
-                }}
-                autoPlay playsInline muted
-                className="w-full h-[140px] object-cover"
-              />
+              {(remoteScreenStream || screenStream) && (
+                <VideoSharePlayer
+                  stream={(remoteScreenStream || screenStream)!}
+                  className="w-full h-[140px] object-cover"
+                />
+              )}
               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <div className="flex items-center space-x-2 text-white text-xs font-bold">
                   <Maximize2 size={16} />

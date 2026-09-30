@@ -1,8 +1,51 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
 import { Mic, MicOff, Headphones, MonitorUp, PhoneOff, Volume2, Maximize2, Minimize2, X, Music, PanelLeftOpen } from 'lucide-react';
 import { SoundboardModal } from './SoundboardModal';
+
+export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: string }> = ({ stream, className }) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    if (videoEl.srcObject !== stream) {
+      videoEl.srcObject = stream;
+    }
+
+    const tryPlay = () => {
+      videoEl.play().catch(err => console.warn('Video playback notice:', err));
+    };
+
+    tryPlay();
+
+    const videoTracks = stream.getVideoTracks();
+    videoTracks.forEach(t => {
+      t.addEventListener('unmute', tryPlay);
+    });
+
+    return () => {
+      videoTracks.forEach(t => {
+        t.removeEventListener('unmute', tryPlay);
+      });
+    };
+  }, [stream]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted
+      className={className}
+      onLoadedMetadata={(e) => {
+        e.currentTarget.play().catch(err => console.warn('Video onLoadedMetadata notice:', err));
+      }}
+    />
+  );
+};
 
 interface VoiceChannelRoomProps {
   channelName: string;
@@ -109,20 +152,8 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
 
         {/* Fullscreen Video */}
         <div className="flex-1 flex items-center justify-center overflow-hidden p-4 min-h-0">
-          <video
-            ref={(videoEl) => {
-              if (videoEl && videoEl.srcObject !== fullscreenShare.stream) {
-                videoEl.srcObject = fullscreenShare.stream;
-                videoEl.play().catch(e => console.warn('Fullscreen video play notice:', e));
-              }
-            }}
-            onLoadedMetadata={(e) => {
-              const el = e.currentTarget;
-              el.play().catch(err => console.warn('Video playback onLoadedMetadata:', err));
-            }}
-            autoPlay
-            playsInline
-            muted
+          <VideoSharePlayer
+            stream={fullscreenShare.stream}
             className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
           />
         </div>
@@ -208,20 +239,8 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
               key={share.userId}
               className="rounded-3xl overflow-hidden bg-black/90 border border-white/10 shadow-2xl relative aspect-video flex items-center justify-center group"
             >
-              <video
-                ref={(videoEl) => {
-                  if (videoEl && videoEl.srcObject !== share.stream) {
-                    videoEl.srcObject = share.stream;
-                    videoEl.play().catch(e => console.warn('Grid video play notice:', e));
-                  }
-                }}
-                onLoadedMetadata={(e) => {
-                  const el = e.currentTarget;
-                  el.play().catch(err => console.warn('Video playback onLoadedMetadata:', err));
-                }}
-                autoPlay
-                playsInline
-                muted
+              <VideoSharePlayer
+                stream={share.stream}
                 className="w-full h-full object-contain"
               />
               <div className="absolute top-3 left-3 px-3 py-1.5 bg-black/75 backdrop-blur-md rounded-xl text-xs font-semibold text-white flex items-center space-x-2 border border-white/10">
