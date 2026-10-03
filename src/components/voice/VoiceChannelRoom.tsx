@@ -16,7 +16,11 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
     }
 
     const tryPlay = () => {
-      videoEl.play().catch(err => console.warn('Video playback notice:', err));
+      if (videoEl && videoEl.paused) {
+        videoEl.play().catch(err => {
+          console.warn('Video playback notice:', err);
+        });
+      }
     };
 
     tryPlay();
@@ -26,10 +30,24 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
       t.addEventListener('unmute', tryPlay);
     });
 
+    const handleLoadedMetadata = () => tryPlay();
+    const handleCanPlay = () => tryPlay();
+    videoEl.addEventListener('loadedmetadata', handleLoadedMetadata);
+    videoEl.addEventListener('canplay', handleCanPlay);
+
+    const interval = setInterval(() => {
+      if (videoEl && videoEl.paused && videoEl.readyState >= 1) {
+        tryPlay();
+      }
+    }, 1000);
+
     return () => {
+      clearInterval(interval);
       videoTracks.forEach(t => {
         t.removeEventListener('unmute', tryPlay);
       });
+      videoEl.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      videoEl.removeEventListener('canplay', handleCanPlay);
     };
   }, [stream]);
 
@@ -40,8 +58,11 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
       playsInline
       muted
       className={className}
-      onLoadedMetadata={(e) => {
-        e.currentTarget.play().catch(err => console.warn('Video onLoadedMetadata notice:', err));
+      onLoadedMetadata={() => {
+        const el = videoRef.current;
+        if (el && el.paused) {
+          el.play().catch(() => {});
+        }
       }}
     />
   );
@@ -108,7 +129,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
   remoteStreams.forEach((stream, peerId) => {
     const peerParticipant = voiceParticipants.find(p => p.userId === peerId);
     const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live');
-    if (hasLiveVideo && (peerParticipant ? peerParticipant.isScreenSharing : true)) {
+    if (hasLiveVideo) {
       const peerUser = peerParticipant?.user;
       activeShares.push({
         userId: peerId,
