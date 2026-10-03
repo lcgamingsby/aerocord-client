@@ -67,8 +67,7 @@ const ICE_SERVERS: RTCConfiguration = {
       username: 'openrelayproject',
       credential: 'openrelayproject'
     }
-  ],
-  iceCandidatePoolSize: 10
+  ]
 };
 
 export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -151,7 +150,16 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!audioEl) {
       audioEl = new Audio();
       audioEl.autoplay = true;
-      audioEl.style.display = 'none';
+      (audioEl as any).playsInline = true;
+      (audioEl as any).webkitPlaysInline = true;
+      // Position offscreen instead of display: 'none' to prevent Chromium background audio throttling
+      audioEl.style.position = 'fixed';
+      audioEl.style.top = '-9999px';
+      audioEl.style.left = '-9999px';
+      audioEl.style.width = '1px';
+      audioEl.style.height = '1px';
+      audioEl.style.opacity = '0';
+      audioEl.style.pointerEvents = 'none';
       document.body.appendChild(audioEl);
       audioElementsRef.current.set(targetUserId, audioEl);
     }
@@ -163,16 +171,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const vol = isDeafenedRef.current ? 0 : ((userVolumesRef.current.get(targetUserId) ?? 100) / 100);
     audioEl.volume = Math.max(0, Math.min(1, vol));
 
-    audioEl.play().catch(e => {
-      console.warn('Remote audio playback notice:', e);
-      const resumeAudio = () => {
-        audioEl?.play().catch(() => {});
-        window.removeEventListener('click', resumeAudio);
-        window.removeEventListener('keydown', resumeAudio);
-      };
-      window.addEventListener('click', resumeAudio, { once: true });
-      window.addEventListener('keydown', resumeAudio, { once: true });
-    });
+    if (audioEl.paused) {
+      audioEl.play().catch(e => {
+        console.warn(`[WebRTC] Remote audio playback waiting for user interaction for ${targetUserId}:`, e);
+      });
+    }
   };
 
   // Helper to sync all live receivers (video and audio) for a peer connection into remoteStreams & audio
@@ -215,10 +218,34 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // 2. Video and composite stream for UI rendering
-    // Creating a fresh MediaStream ensures React components and <video> elements detect the new track state immediately
-    const freshStream = new MediaStream(liveTracks);
-    remoteStreamsRef.current.set(peerId, freshStream);
-    setRemoteStreams(new Map(remoteStreamsRef.current));
+    // Maintain a stable MediaStream instance for each peer so <video> elements don't reset to black on every sync
+    let peerStream = remoteStreamsRef.current.get(peerId);
+    let streamChanged = false;
+
+    if (!peerStream) {
+      peerStream = new MediaStream();
+      remoteStreamsRef.current.set(peerId, peerStream);
+      streamChanged = true;
+    }
+
+    const currentTracks = peerStream.getTracks();
+    currentTracks.forEach(t => {
+      if (!liveTracks.some(lt => lt.id === t.id)) {
+        peerStream!.removeTrack(t);
+        streamChanged = true;
+      }
+    });
+
+    liveTracks.forEach(lt => {
+      if (!peerStream!.getTracks().some(t => t.id === lt.id)) {
+        peerStream!.addTrack(lt);
+        streamChanged = true;
+      }
+    });
+
+    if (streamChanged) {
+      setRemoteStreams(new Map(remoteStreamsRef.current));
+    }
   };
 
   // Keep refs in sync with state
@@ -254,6 +281,30 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audioEl.volume = Math.max(0, Math.min(1, vol));
     });
   }, [userVolumes]);
+
+  // Global User Gesture Unlocker: Automatically unpause audio elements and resume Web Audio contexts on any user interaction
+  const unlockAudio = useCallback(() => {
+    if (audioMixerRef.current && audioMixerRef.current.state === 'suspended') {
+      audioMixerRef.current.resume().catch(() => {});
+    }
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume().catch(() => {});
+    }
+    audioElementsRef.current.forEach(el => {
+      if (el.paused) {
+        el.play().catch(() => {});
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    const events = ['click', 'touchstart', 'touchend', 'keydown', 'mousedown'];
+    const handleGesture = () => unlockAudio();
+    events.forEach(evt => window.addEventListener(evt, handleGesture, { passive: true }));
+    return () => {
+      events.forEach(evt => window.removeEventListener(evt, handleGesture));
+    };
+  }, [unlockAudio]);
 
   // Clean disconnect on tab refresh / page close
   useEffect(() => {
@@ -450,6 +501,15 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (pc.iceConnectionState === 'failed') {
         console.warn(`[WebRTC] ICE connection failed with ${targetUserId}, attempting ICE restart...`);
         pc.restartIce();
+        makeOffer(targetUserId, channelId);
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') {
+        console.warn(`[WebRTC] Connection failed with ${targetUserId}, attempting ICE restart...`);
+        pc.restartIce();
+        makeOffer(targetUserId, channelId);
       }
     };
 
@@ -460,6 +520,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const joinVoiceChannel = async (channelId: string) => {
     if (!socket || !user) return;
 
+    unlockAudio();
     if (currentVoiceChannel === channelId) return; // already in this channel
 
     // If in another channel, leave it first
@@ -692,6 +753,25 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           await processPendingCandidates(senderUserId, pc);
+
+          // CRITICAL: Ensure transceiver directions before creating answer!
+          // If video transceiver was inactive, createAnswer will answer 'inactive', silencing video.
+          const videoTransceiver = pc.getTransceivers().find(t => 
+            (t.receiver && t.receiver.track?.kind === 'video') || 
+            (t.sender && t.sender.track?.kind === 'video')
+          );
+          if (videoTransceiver) {
+            const hasLocalVideo = !!(screenStreamRef.current && screenStreamRef.current.getVideoTracks().some(t => t.readyState === 'live'));
+            videoTransceiver.direction = hasLocalVideo ? 'sendrecv' : 'recvonly';
+          }
+
+          const audioTransceiver = pc.getTransceivers().find(t => 
+            (t.receiver && t.receiver.track?.kind === 'audio') || 
+            (t.sender && t.sender.track?.kind === 'audio')
+          );
+          if (audioTransceiver) {
+            audioTransceiver.direction = 'sendrecv';
+          }
 
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
@@ -973,11 +1053,14 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               await ctx.resume();
             }
 
-            // Keep AudioContext active (never auto-suspended by browser)
+            // Keep AudioContext active (never auto-suspended by browser even in background tabs)
             try {
+              const osc = ctx.createOscillator();
               const silenceGain = ctx.createGain();
               silenceGain.gain.value = 0;
+              osc.connect(silenceGain);
               silenceGain.connect(ctx.destination);
+              osc.start();
             } catch (e) {}
 
             const dest = ctx.createMediaStreamDestination();
@@ -1080,6 +1163,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Direct Call Actions
   const startDirectCall = async (targetUser: User, conversationId: string, isVideo = false) => {
     if (!socket) return;
+    unlockAudio();
     await initLocalAudio();
     setActiveCall({
       targetUser,
@@ -1098,6 +1182,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const acceptCall = async () => {
     if (!incomingCall || !socket) return;
+    unlockAudio();
     soundEffects.stopRingtone();
     await initLocalAudio();
     socket.emit('call_response', {

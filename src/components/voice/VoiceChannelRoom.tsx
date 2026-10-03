@@ -16,7 +16,9 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
     }
 
     const tryPlay = () => {
-      videoEl.play().catch(err => console.warn('Video playback notice:', err));
+      if (videoEl && videoEl.paused) {
+        videoEl.play().catch(err => console.warn('Video playback notice:', err));
+      }
     };
 
     tryPlay();
@@ -26,10 +28,29 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
       t.addEventListener('unmute', tryPlay);
     });
 
+    videoEl.addEventListener('canplay', tryPlay);
+    videoEl.addEventListener('loadedmetadata', tryPlay);
+
+    // Keep-alive check: ensure video resumes if paused or delayed by keyframe buffering
+    const interval = setInterval(() => {
+      if (videoEl && videoEl.paused && stream.getVideoTracks().some(t => t.readyState === 'live')) {
+        tryPlay();
+      }
+    }, 1000);
+
+    const onUserGesture = () => tryPlay();
+    window.addEventListener('click', onUserGesture, { passive: true });
+    window.addEventListener('touchstart', onUserGesture, { passive: true });
+
     return () => {
+      clearInterval(interval);
       videoTracks.forEach(t => {
         t.removeEventListener('unmute', tryPlay);
       });
+      videoEl.removeEventListener('canplay', tryPlay);
+      videoEl.removeEventListener('loadedmetadata', tryPlay);
+      window.removeEventListener('click', onUserGesture);
+      window.removeEventListener('touchstart', onUserGesture);
     };
   }, [stream]);
 
@@ -42,6 +63,9 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
       className={className}
       onLoadedMetadata={(e) => {
         e.currentTarget.play().catch(err => console.warn('Video onLoadedMetadata notice:', err));
+      }}
+      onCanPlay={(e) => {
+        e.currentTarget.play().catch(err => console.warn('Video onCanPlay notice:', err));
       }}
     />
   );
