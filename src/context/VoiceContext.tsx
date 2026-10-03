@@ -148,10 +148,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const playRemoteAudio = (targetUserId: string, stream: MediaStream) => {
     let audioEl = audioElementsRef.current.get(targetUserId);
     if (!audioEl) {
-      audioEl = new Audio();
+      audioEl = document.createElement('audio');
       audioEl.autoplay = true;
       (audioEl as any).playsInline = true;
-      (audioEl as any).webkitPlaysInline = true;
       // Position offscreen instead of display: 'none' to prevent Chromium background audio throttling
       audioEl.style.position = 'fixed';
       audioEl.style.top = '-9999px';
@@ -164,7 +163,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audioElementsRef.current.set(targetUserId, audioEl);
     }
 
-    if (audioEl.srcObject !== stream) {
+    const currentTrack = (audioEl.srcObject as MediaStream | null)?.getAudioTracks()[0];
+    const incomingTrack = stream.getAudioTracks()[0];
+
+    if (!currentTrack || currentTrack.id !== incomingTrack?.id || audioEl.srcObject !== stream) {
       audioEl.srcObject = stream;
     }
 
@@ -173,78 +175,60 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (audioEl.paused) {
       audioEl.play().catch(e => {
-        console.warn(`[WebRTC] Remote audio playback waiting for user interaction for ${targetUserId}:`, e);
+        console.warn(`[WebRTC] Audio play waiting for user gesture (${targetUserId}):`, e);
       });
     }
   };
 
   // Helper to sync all live receivers (video and audio) for a peer connection into remoteStreams & audio
   const syncPeerMedia = (peerId: string, conn: RTCPeerConnection) => {
-    const liveTracks: MediaStreamTrack[] = [];
-    conn.getReceivers().forEach(receiver => {
-      if (receiver.track) {
-        if (!(receiver.track as any)._hasListeners) {
-          (receiver.track as any)._hasListeners = true;
-          receiver.track.onunmute = () => syncPeerMedia(peerId, conn);
-          receiver.track.onmute = () => syncPeerMedia(peerId, conn);
-          receiver.track.onended = () => syncPeerMedia(peerId, conn);
-        }
-        if (receiver.track.readyState === 'live') {
-          liveTracks.push(receiver.track);
-        }
+    const receivers = conn.getReceivers();
+
+    // Attach lifecycle listeners to tracks
+    receivers.forEach(receiver => {
+      if (receiver.track && !(receiver.track as any)._hasListeners) {
+        (receiver.track as any)._hasListeners = true;
+        receiver.track.onunmute = () => syncPeerMedia(peerId, conn);
+        receiver.track.onmute = () => syncPeerMedia(peerId, conn);
+        receiver.track.onended = () => syncPeerMedia(peerId, conn);
       }
     });
 
-    // 1. Audio playback management via dedicated stable stream to avoid resetting HTMLAudioElement
-    const audioTracks = liveTracks.filter(t => t.kind === 'audio');
-    if (audioTracks.length > 0) {
-      let audioStream = peerAudioStreamsRef.current.get(peerId);
-      if (!audioStream) {
-        audioStream = new MediaStream();
-        peerAudioStreamsRef.current.set(peerId, audioStream);
+    // 1. Audio playback management: extract live audio track
+    const liveAudioTrack = receivers
+      .map(r => r.track)
+      .find(t => t && t.kind === 'audio' && t.readyState === 'live');
+
+    if (liveAudioTrack) {
+      let currentAudioStream = peerAudioStreamsRef.current.get(peerId);
+      const currentTrack = currentAudioStream?.getAudioTracks()[0];
+
+      if (!currentAudioStream || currentTrack?.id !== liveAudioTrack.id) {
+        currentAudioStream = new MediaStream([liveAudioTrack]);
+        peerAudioStreamsRef.current.set(peerId, currentAudioStream);
       }
-      const curTracks = audioStream.getAudioTracks();
-      curTracks.forEach(t => {
-        if (!audioTracks.some(at => at.id === t.id)) {
-          audioStream!.removeTrack(t);
-        }
-      });
-      audioTracks.forEach(at => {
-        if (!audioStream!.getAudioTracks().some(t => t.id === at.id)) {
-          audioStream!.addTrack(at);
-        }
-      });
-      playRemoteAudio(peerId, audioStream);
+      playRemoteAudio(peerId, currentAudioStream);
     }
 
-    // 2. Video and composite stream for UI rendering
-    // Maintain a stable MediaStream instance for each peer so <video> elements don't reset to black on every sync
-    let peerStream = remoteStreamsRef.current.get(peerId);
-    let streamChanged = false;
+    // 2. Video & screen share management: extract live video track
+    const liveVideoTrack = receivers
+      .map(r => r.track)
+      .find(t => t && t.kind === 'video' && t.readyState === 'live');
 
-    if (!peerStream) {
-      peerStream = new MediaStream();
-      remoteStreamsRef.current.set(peerId, peerStream);
-      streamChanged = true;
-    }
+    if (liveVideoTrack) {
+      let currentVideoStream = remoteStreamsRef.current.get(peerId);
+      const currentTrack = currentVideoStream?.getVideoTracks()[0];
 
-    const currentTracks = peerStream.getTracks();
-    currentTracks.forEach(t => {
-      if (!liveTracks.some(lt => lt.id === t.id)) {
-        peerStream!.removeTrack(t);
-        streamChanged = true;
+      if (!currentVideoStream || currentTrack?.id !== liveVideoTrack.id) {
+        currentVideoStream = new MediaStream([liveVideoTrack]);
+        remoteStreamsRef.current.set(peerId, currentVideoStream);
+        setRemoteStreams(new Map(remoteStreamsRef.current));
       }
-    });
-
-    liveTracks.forEach(lt => {
-      if (!peerStream!.getTracks().some(t => t.id === lt.id)) {
-        peerStream!.addTrack(lt);
-        streamChanged = true;
+    } else {
+      if (remoteStreamsRef.current.has(peerId)) {
+        remoteStreamsRef.current.delete(peerId);
+        setRemoteStreams(new Map(remoteStreamsRef.current));
       }
-    });
-
-    if (streamChanged) {
-      setRemoteStreams(new Map(remoteStreamsRef.current));
     }
   };
 
@@ -748,7 +732,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               return;
             }
             // Polite peer rolls back local offer to accept remote offer
-            await pc.setLocalDescription({ type: 'rollback' });
+            if (pc.signalingState === 'have-local-offer') {
+              await pc.setLocalDescription({ type: 'rollback' });
+            }
           }
 
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
@@ -978,9 +964,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     if (originalMicTrack) {
       for (const pc of peerConnections.current.values()) {
-        const audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-        if (audioSender) {
-          await audioSender.replaceTrack(originalMicTrack).catch(() => {});
+        const audioTransceiver = pc.getTransceivers().find(t => 
+          t.sender?.track?.kind === 'audio' || t.receiver?.track?.kind === 'audio'
+        );
+        if (audioTransceiver && audioTransceiver.sender) {
+          await audioTransceiver.sender.replaceTrack(originalMicTrack).catch(() => {});
         }
       }
     }
@@ -1094,9 +1082,11 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             // Seamlessly swap audio senders on all active peer connections
             for (const pc of peerConnections.current.values()) {
-              const audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-              if (audioSender) {
-                await audioSender.replaceTrack(compositeAudioTrack).catch(() => {});
+              const audioTransceiver = pc.getTransceivers().find(t => 
+                t.sender?.track?.kind === 'audio' || t.receiver?.track?.kind === 'audio'
+              );
+              if (audioTransceiver && audioTransceiver.sender) {
+                await audioTransceiver.sender.replaceTrack(compositeAudioTrack).catch(() => {});
               }
             }
           } catch (mixErr) {
