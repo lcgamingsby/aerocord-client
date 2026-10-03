@@ -108,7 +108,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
   remoteStreams.forEach((stream, peerId) => {
     const peerParticipant = voiceParticipants.find(p => p.userId === peerId);
     const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live');
-    if (hasLiveVideo && (peerParticipant ? peerParticipant.isScreenSharing : true)) {
+    if (peerParticipant && peerParticipant.isScreenSharing && hasLiveVideo) {
       const peerUser = peerParticipant?.user;
       activeShares.push({
         userId: peerId,
