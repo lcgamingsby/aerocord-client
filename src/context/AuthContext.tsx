@@ -182,21 +182,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = async () => {
-    // Call backend logout endpoint (triggers guest account auto-deletion)
-    if (token) {
+    const currentToken = token || localStorage.getItem('aerocord_token');
+
+    // Immediately remove local credentials and session data
+    localStorage.removeItem('aerocord_token');
+    try {
+      sessionStorage.clear();
+    } catch {}
+    setToken(null);
+    setUser(null);
+    setFriends([]);
+
+    // Call backend logout endpoint to revoke JWT token on server
+    if (currentToken) {
       try {
         await fetch(apiUrl('/api/auth/logout'), {
           method: 'POST',
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${currentToken}` }
         });
       } catch (err) {
         console.error('Logout API error:', err);
       }
     }
-    localStorage.removeItem('aerocord_token');
-    setToken(null);
-    setUser(null);
-    setFriends([]);
   };
 
   const updateProfile = async (updates: Partial<User>) => {
