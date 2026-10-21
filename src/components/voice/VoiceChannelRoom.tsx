@@ -1,11 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
-import { Mic, MicOff, Headphones, MonitorUp, PhoneOff, Volume2, Maximize2, Minimize2, X, Music, PanelLeftOpen } from 'lucide-react';
+import { Mic, MicOff, Headphones, MonitorUp, PhoneOff, Volume2, VolumeX, Maximize2, Minimize2, X, Music, PanelLeftOpen } from 'lucide-react';
 import { SoundboardModal } from './SoundboardModal';
 
-export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: string }> = ({ stream, className }) => {
+export const VideoSharePlayer: React.FC<{ 
+  stream: MediaStream; 
+  className?: string;
+  isLocal?: boolean;
+}> = ({ stream, className, isLocal = false }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [isAudioMuted, setIsAudioMuted] = useState<boolean>(isLocal);
+  const [audioVolume, setAudioVolume] = useState<number>(100);
+  const hasAudioTrack = stream.getAudioTracks().some(t => t.readyState === 'live');
 
   useEffect(() => {
     const videoEl = videoRef.current;
@@ -15,6 +22,10 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
       videoEl.srcObject = stream;
     }
 
+    // Set muted status: always mute local to prevent echo, allow unmuted for remote
+    videoEl.muted = isLocal ? true : isAudioMuted;
+    videoEl.volume = isLocal ? 0 : Math.max(0, Math.min(1, audioVolume / 100));
+
     const tryPlay = () => {
       if (videoEl && videoEl.paused) {
         videoEl.play().catch(err => console.warn('Video playback notice:', err));
@@ -23,15 +34,14 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
 
     tryPlay();
 
-    const videoTracks = stream.getVideoTracks();
-    videoTracks.forEach(t => {
+    const tracks = stream.getTracks();
+    tracks.forEach(t => {
       t.addEventListener('unmute', tryPlay);
     });
 
     videoEl.addEventListener('canplay', tryPlay);
     videoEl.addEventListener('loadedmetadata', tryPlay);
 
-    // Keep-alive check: ensure video resumes if paused or delayed by keyframe buffering
     const interval = setInterval(() => {
       if (videoEl && videoEl.paused && stream.getVideoTracks().some(t => t.readyState === 'live')) {
         tryPlay();
@@ -44,7 +54,7 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
 
     return () => {
       clearInterval(interval);
-      videoTracks.forEach(t => {
+      tracks.forEach(t => {
         t.removeEventListener('unmute', tryPlay);
       });
       videoEl.removeEventListener('canplay', tryPlay);
@@ -52,22 +62,53 @@ export const VideoSharePlayer: React.FC<{ stream: MediaStream; className?: strin
       window.removeEventListener('click', onUserGesture);
       window.removeEventListener('touchstart', onUserGesture);
     };
-  }, [stream]);
+  }, [stream, isLocal, isAudioMuted, audioVolume]);
 
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className={className}
-      onLoadedMetadata={(e) => {
-        e.currentTarget.play().catch(err => console.warn('Video onLoadedMetadata notice:', err));
-      }}
-      onCanPlay={(e) => {
-        e.currentTarget.play().catch(err => console.warn('Video onCanPlay notice:', err));
-      }}
-    />
+    <div className="relative w-full h-full flex items-center justify-center group/player">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted={isLocal ? true : isAudioMuted}
+        className={className}
+        onLoadedMetadata={(e) => {
+          e.currentTarget.play().catch(err => console.warn('Video onLoadedMetadata notice:', err));
+        }}
+        onCanPlay={(e) => {
+          e.currentTarget.play().catch(err => console.warn('Video onCanPlay notice:', err));
+        }}
+      />
+
+      {/* Audio controls overlay for remote screen share */}
+      {!isLocal && hasAudioTrack && (
+        <div className="absolute bottom-3 right-3 flex items-center space-x-2 px-3 py-1.5 bg-black/75 backdrop-blur-md rounded-2xl border border-white/10 opacity-0 group-hover/player:opacity-100 transition-opacity z-20">
+          <button
+            onClick={() => setIsAudioMuted(!isAudioMuted)}
+            title={isAudioMuted ? 'Nyalakan Audio Layar' : 'Bisukan Audio Layar'}
+            className="p-1 rounded-lg text-white hover:text-emerald-400 transition-colors cursor-pointer"
+          >
+            {isAudioMuted ? <VolumeX size={15} className="text-rose-400" /> : <Volume2 size={15} className="text-emerald-400" />}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={isAudioMuted ? 0 : audioVolume}
+            onChange={(e) => {
+              const val = parseInt(e.target.value);
+              setAudioVolume(val);
+              if (val > 0 && isAudioMuted) setIsAudioMuted(false);
+            }}
+            title={`Volume Layar: ${audioVolume}%`}
+            className="w-16 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+          />
+          <span className="text-[10px] text-white/80 font-mono w-6 text-right">
+            {isAudioMuted ? '0%' : `${audioVolume}%`}
+          </span>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -132,11 +173,11 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
   remoteStreams.forEach((stream, peerId) => {
     const peerParticipant = voiceParticipants.find(p => p.userId === peerId);
     const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live');
-    if (hasLiveVideo && (peerParticipant ? peerParticipant.isScreenSharing : true)) {
+    if (hasLiveVideo) {
       const peerUser = peerParticipant?.user;
       activeShares.push({
         userId: peerId,
-        username: `${peerUser?.username || 'Peer'} (Screen Share)`,
+        username: `${peerUser?.username || 'Teman'} (Screen Share)`,
         stream,
         isLocal: false
       });
@@ -178,6 +219,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
         <div className="flex-1 flex items-center justify-center overflow-hidden p-4 min-h-0">
           <VideoSharePlayer
             stream={fullscreenShare.stream}
+            isLocal={fullscreenShare.isLocal}
             className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/5"
           />
         </div>
@@ -265,6 +307,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
             >
               <VideoSharePlayer
                 stream={share.stream}
+                isLocal={share.isLocal}
                 className="w-full h-full object-contain"
               />
               <div className="absolute top-3 left-3 px-3 py-1.5 bg-black/75 backdrop-blur-md rounded-xl text-xs font-semibold text-white flex items-center space-x-2 border border-white/10">

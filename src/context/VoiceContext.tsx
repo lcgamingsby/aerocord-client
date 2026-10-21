@@ -12,8 +12,8 @@ interface VoiceContextType {
   isScreenSharing: boolean;
   localStream: MediaStream | null;
   screenStream: MediaStream | null;
-  remoteStreams: Map<string, MediaStream>;
-  userVolumes: Map<string, number>; // 0 to 200
+  remoteStreams: Map<string, MediaStream>; // peerUserId -> MediaStream (screen share video & screen audio)
+  userVolumes: Map<string, number>; // peerUserId -> 0 to 200
   joinVoiceChannel: (channelId: string) => Promise<void>;
   leaveVoiceChannel: () => void;
   toggleMute: () => void;
@@ -31,17 +31,15 @@ interface VoiceContextType {
 
 const VoiceContext = createContext<VoiceContextType | undefined>(undefined);
 
-// Multi-region STUN and global TURN servers for reliable WebRTC NAT & firewall traversal across different networks/ISPs
+// Multi-region STUN and global TURN servers for reliable WebRTC NAT & firewall traversal
 const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
-    // Google & Cloudflare STUN Servers (discover public IP)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    // Free Globally Distributed TURN Servers (Open Relay Project / Metered) for cross-NAT relaying
     {
       urls: 'turn:openrelay.metered.ca:80',
       username: 'openrelayproject',
@@ -101,32 +99,19 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // WebRTC Peer Connections: peerUserId -> RTCPeerConnection
   const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map());
-  // HTMLAudioElements for playing remote audio: peerUserId -> HTMLAudioElement
+  // HTMLAudioElements for playing remote microphone audio: peerUserId -> HTMLAudioElement
   const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   // Buffer for ICE candidates arriving before remote description is set
   const pendingIceCandidates = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
-  // Negotiation tracking for Perfect Negotiation pattern
+  // Negotiation tracking for polite peer negotiation
   const makingOfferRef = useRef<Map<string, boolean>>(new Map());
-
-  // Track the current active outgoing audio track and stream (microphone or mixed mic+screen audio)
-  const currentActiveAudioTrackRef = useRef<MediaStreamTrack | null>(null);
-  const activeAudioStreamRef = useRef<MediaStream | null>(null);
-
-  // Web Audio Mixer for combining Microphone and Screen Share audio seamlessly on sender side
-  const audioMixerRef = useRef<AudioContext | null>(null);
-  const micSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const micGainNodeRef = useRef<GainNode | null>(null);
-  const screenSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const screenGainNodeRef = useRef<GainNode | null>(null);
-  const destNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
-  const screenAudioSourceStreamRef = useRef<MediaStream | null>(null);
 
   // Web Audio Speaking Detector
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const speakingIntervalRef = useRef<number | null>(null);
 
-  // Dedicated stable MediaStreams for remote audio playback: peerUserId -> MediaStream
+  // Dedicated MediaStreams for remote mic audio playback: peerUserId -> MediaStream
   const peerAudioStreamsRef = useRef<Map<string, MediaStream>>(new Map());
 
   // Helper to process queued ICE candidates once remote description is set
@@ -144,14 +129,14 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Helper to play remote audio stream stably
+  // Helper to play remote mic audio stably
   const playRemoteAudio = (targetUserId: string, stream: MediaStream) => {
     let audioEl = audioElementsRef.current.get(targetUserId);
     if (!audioEl) {
       audioEl = document.createElement('audio');
       audioEl.autoplay = true;
       (audioEl as any).playsInline = true;
-      // Position offscreen instead of display: 'none' to prevent Chromium background audio throttling
+      // Position offscreen safely
       audioEl.style.position = 'fixed';
       audioEl.style.top = '-9999px';
       audioEl.style.left = '-9999px';
@@ -163,10 +148,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audioElementsRef.current.set(targetUserId, audioEl);
     }
 
-    const currentTrack = (audioEl.srcObject as MediaStream | null)?.getAudioTracks()[0];
-    const incomingTrack = stream.getAudioTracks()[0];
-
-    if (!currentTrack || currentTrack.id !== incomingTrack?.id || audioEl.srcObject !== stream) {
+    if (audioEl.srcObject !== stream) {
       audioEl.srcObject = stream;
     }
 
@@ -180,48 +162,55 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Helper to sync all live receivers (video and audio) for a peer connection into remoteStreams & audio
+  // Synchronize all media receivers for a peer connection
   const syncPeerMedia = (peerId: string, conn: RTCPeerConnection) => {
     const receivers = conn.getReceivers();
 
-    // Attach lifecycle listeners to tracks
+    // Attach lifecycle listeners to all tracks
     receivers.forEach(receiver => {
-      if (receiver.track && !(receiver.track as any)._hasListeners) {
-        (receiver.track as any)._hasListeners = true;
-        receiver.track.onunmute = () => syncPeerMedia(peerId, conn);
-        receiver.track.onmute = () => syncPeerMedia(peerId, conn);
-        receiver.track.onended = () => syncPeerMedia(peerId, conn);
+      const track = receiver.track;
+      if (track && !(track as any)._hasLifecycleListeners) {
+        (track as any)._hasLifecycleListeners = true;
+        track.onunmute = () => syncPeerMedia(peerId, conn);
+        track.onmute = () => syncPeerMedia(peerId, conn);
+        track.onended = () => syncPeerMedia(peerId, conn);
       }
     });
 
-    // 1. Audio playback management: extract live audio track
-    const liveAudioTrack = receivers
-      .map(r => r.track)
-      .find(t => t && t.kind === 'audio' && t.readyState === 'live');
+    // 1. Microphone Audio Receiver (first audio transceiver)
+    const audioReceivers = receivers.filter(r => r.track && r.track.kind === 'audio');
+    const micReceiver = audioReceivers[0];
 
-    if (liveAudioTrack) {
+    if (micReceiver && micReceiver.track && micReceiver.track.readyState === 'live') {
       let currentAudioStream = peerAudioStreamsRef.current.get(peerId);
       const currentTrack = currentAudioStream?.getAudioTracks()[0];
 
-      if (!currentAudioStream || currentTrack?.id !== liveAudioTrack.id) {
-        currentAudioStream = new MediaStream([liveAudioTrack]);
+      if (!currentAudioStream || currentTrack?.id !== micReceiver.track.id) {
+        currentAudioStream = new MediaStream([micReceiver.track]);
         peerAudioStreamsRef.current.set(peerId, currentAudioStream);
       }
       playRemoteAudio(peerId, currentAudioStream);
     }
 
-    // 2. Video & screen share management: extract live video track
-    const liveVideoTrack = receivers
-      .map(r => r.track)
-      .find(t => t && t.kind === 'video' && t.readyState === 'live');
+    // 2. Screen Share Receiver (Video & optional Screen Audio)
+    const videoReceiver = receivers.find(r => r.track && r.track.kind === 'video');
+    // Screen audio is the second audio receiver if sender shared tab/system audio
+    const screenAudioReceiver = audioReceivers.length > 1 ? audioReceivers[1] : null;
 
-    if (liveVideoTrack) {
-      let currentVideoStream = remoteStreamsRef.current.get(peerId);
-      const currentTrack = currentVideoStream?.getVideoTracks()[0];
+    if (videoReceiver && videoReceiver.track && videoReceiver.track.readyState === 'live') {
+      const screenTracks: MediaStreamTrack[] = [videoReceiver.track];
+      if (screenAudioReceiver && screenAudioReceiver.track && screenAudioReceiver.track.readyState === 'live') {
+        screenTracks.push(screenAudioReceiver.track);
+      }
 
-      if (!currentVideoStream || currentTrack?.id !== liveVideoTrack.id) {
-        currentVideoStream = new MediaStream([liveVideoTrack]);
-        remoteStreamsRef.current.set(peerId, currentVideoStream);
+      let currentScreenStream = remoteStreamsRef.current.get(peerId);
+      const currentVideoTrack = currentScreenStream?.getVideoTracks()[0];
+      const currentAudioTrack = currentScreenStream?.getAudioTracks()[0];
+      const hasAudioChanged = (screenAudioReceiver?.track?.id !== currentAudioTrack?.id);
+
+      if (!currentScreenStream || currentVideoTrack?.id !== videoReceiver.track.id || hasAudioChanged) {
+        currentScreenStream = new MediaStream(screenTracks);
+        remoteStreamsRef.current.set(peerId, currentScreenStream);
         setRemoteStreams(new Map(remoteStreamsRef.current));
       }
     } else {
@@ -252,8 +241,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     isMutedRef.current = isMuted;
-    if (micGainNodeRef.current) {
-      micGainNodeRef.current.gain.value = isMuted ? 0 : 1;
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach(t => {
+        t.enabled = !isMuted;
+      });
     }
   }, [isMuted]);
 
@@ -268,9 +259,6 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Global User Gesture Unlocker: Automatically unpause audio elements and resume Web Audio contexts on any user interaction
   const unlockAudio = useCallback(() => {
-    if (audioMixerRef.current && audioMixerRef.current.state === 'suspended') {
-      audioMixerRef.current.resume().catch(() => {});
-    }
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
       audioContextRef.current.resume().catch(() => {});
     }
@@ -333,14 +321,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         video: false
       });
 
+      // Apply initial mute state
+      stream.getAudioTracks().forEach(t => {
+        t.enabled = !isMutedRef.current;
+      });
+
       localStreamRef.current = stream;
       setLocalStream(stream);
-
-      // Keep current active track & stream reference
-      if (!currentActiveAudioTrackRef.current) {
-        currentActiveAudioTrackRef.current = stream.getAudioTracks()[0] || null;
-        activeAudioStreamRef.current = stream;
-      }
 
       // Setup Web Audio Volume Visualizer / Speaking Detector
       try {
@@ -377,7 +364,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               sum += dataArray[i];
             }
             const average = sum / bufferLength;
-            const isSpeakingNow = average > 12; // Threshold for speaking
+            const isSpeakingNow = average > 14;
 
             if (isSpeakingNow !== wasSpeaking) {
               wasSpeaking = isSpeakingNow;
@@ -398,7 +385,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Helper to send an SDP offer to a specific peer for initial handshake or renegotiation
+  // Helper to send an SDP offer to a specific peer
   const makeOffer = async (targetUserId: string, channelId?: string) => {
     const pc = peerConnections.current.get(targetUserId);
     if (!pc) return;
@@ -430,43 +417,33 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
-    // Ensure sender audio mixer is running if screen sharing
-    if (audioMixerRef.current && audioMixerRef.current.state === 'suspended') {
-      audioMixerRef.current.resume().catch(() => {});
-    }
-
-    // Add audio track (using active composite audio stream if screen sharing with audio, else microphone stream)
-    const audioStreamToSend = activeAudioStreamRef.current || localStreamRef.current;
-    const audioTrackToSend = currentActiveAudioTrackRef.current || localStreamRef.current?.getAudioTracks()[0];
-    if (audioStreamToSend && audioTrackToSend) {
-      pc.addTrack(audioTrackToSend, audioStreamToSend);
+    // 1. Audio Transceiver (Microphone)
+    const micTrack = localStreamRef.current?.getAudioTracks()[0];
+    if (micTrack && localStreamRef.current) {
+      pc.addTrack(micTrack, localStreamRef.current);
     } else {
       pc.addTransceiver('audio', { direction: 'sendrecv' });
     }
 
-    // Handle video transceiver (either sendrecv with active screen stream, or recvonly ready to receive)
-    if (screenStreamRef.current && screenStreamRef.current.getVideoTracks().length > 0) {
-      const videoTrack = screenStreamRef.current.getVideoTracks()[0];
-      pc.addTrack(videoTrack, screenStreamRef.current);
+    // 2. Video Transceiver (Screen Share Video)
+    const screenVideoTrack = screenStreamRef.current?.getVideoTracks()[0];
+    if (screenVideoTrack && screenStreamRef.current) {
+      pc.addTrack(screenVideoTrack, screenStreamRef.current);
     } else {
       pc.addTransceiver('video', { direction: 'recvonly' });
     }
 
-    // Handle remote track received
-    pc.ontrack = (event) => {
+    // 3. Screen Audio Transceiver (Tab / System Audio from Screen Share)
+    const screenAudioTrack = screenStreamRef.current?.getAudioTracks()[0];
+    if (screenAudioTrack && screenStreamRef.current) {
+      pc.addTrack(screenAudioTrack, screenStreamRef.current);
+    } else {
+      pc.addTransceiver('audio', { direction: 'recvonly' });
+    }
+
+    // Handle incoming remote media
+    pc.ontrack = () => {
       syncPeerMedia(targetUserId, pc);
-
-      event.track.onended = () => {
-        syncPeerMedia(targetUserId, pc);
-      };
-
-      event.track.onmute = () => {
-        syncPeerMedia(targetUserId, pc);
-      };
-
-      event.track.onunmute = () => {
-        syncPeerMedia(targetUserId, pc);
-      };
     };
 
     // Handle ICE candidates
@@ -480,7 +457,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     };
 
-    // Auto-restart ICE on connection failure across different networks
+    // Auto-restart ICE on connection failure
     pc.oniceconnectionstatechange = () => {
       if (pc.iceConnectionState === 'failed') {
         console.warn(`[WebRTC] ICE connection failed with ${targetUserId}, attempting ICE restart...`);
@@ -505,9 +482,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!socket || !user) return;
 
     unlockAudio();
-    if (currentVoiceChannel === channelId) return; // already in this channel
+    if (currentVoiceChannel === channelId) return;
 
-    // If in another channel, leave it first
     if (currentVoiceChannel) {
       leaveVoiceChannel();
     }
@@ -540,40 +516,12 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setLocalStream(null);
     }
 
-    // Clean up screen share
+    // Clean up screen share stream
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach(t => t.stop());
       screenStreamRef.current = null;
       setScreenStream(null);
       setIsScreenSharing(false);
-    }
-
-    currentActiveAudioTrackRef.current = null;
-    activeAudioStreamRef.current = null;
-
-    // Clean up audio mixer
-    if (screenSourceNodeRef.current) {
-      screenSourceNodeRef.current.disconnect();
-      screenSourceNodeRef.current = null;
-    }
-    if (screenGainNodeRef.current) {
-      screenGainNodeRef.current.disconnect();
-      screenGainNodeRef.current = null;
-    }
-    if (micSourceNodeRef.current) {
-      micSourceNodeRef.current.disconnect();
-      micSourceNodeRef.current = null;
-    }
-    if (micGainNodeRef.current) {
-      micGainNodeRef.current.disconnect();
-      micGainNodeRef.current = null;
-    }
-    if (destNodeRef.current) {
-      destNodeRef.current = null;
-    }
-    if (audioMixerRef.current) {
-      audioMixerRef.current.close().catch(() => {});
-      audioMixerRef.current = null;
     }
 
     if (speakingIntervalRef.current) {
@@ -617,12 +565,12 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     socket.on('voice_channel_state', async (data: { channelId: string; participants: VoiceParticipant[] }) => {
       setVoiceParticipants(data.participants);
 
-      // Ensure local audio is initialized before creating offers
+      // Ensure local audio is initialized before creating connections
       if (!localStreamRef.current) {
         await initLocalAudio();
       }
 
-      // Initiate WebRTC offers to existing participants
+      // Initiate WebRTC offers to all existing peers
       data.participants.forEach(async (peer) => {
         if (peer.userId === user?.id) return;
 
@@ -667,7 +615,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       soundEffects.playLeaveVoiceSound();
 
-      // If in a 1-on-1 direct call and the other person left / refreshed, terminate call cleanly
+      // If in a 1-on-1 direct call and target left, terminate call
       if (activeCallRef.current && (activeCallRef.current.targetUser.id === data.userId || activeCallRef.current.conversationId === data.channelId)) {
         soundEffects.stopRingtone();
         setActiveCall(null);
@@ -711,7 +659,6 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     socket.on('voice_signal', async (data: { senderUserId: string; signal: any; channelId: string }) => {
       const { senderUserId, signal, channelId } = data;
 
-      // Ensure local audio is initialized before answering
       if (!localStreamRef.current) {
         await initLocalAudio();
       }
@@ -728,10 +675,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           if (isOfferCollision) {
             if (!isPolite) {
-              // Impolite peer ignores colliding offer
-              return;
+              return; // Impolite peer ignores colliding offer
             }
-            // Polite peer rolls back local offer to accept remote offer
             if (pc.signalingState === 'have-local-offer') {
               await pc.setLocalDescription({ type: 'rollback' });
             }
@@ -740,9 +685,9 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           await processPendingCandidates(senderUserId, pc);
 
-          // CRITICAL: Ensure transceiver directions before creating answer!
-          // If video transceiver was inactive, createAnswer will answer 'inactive', silencing video.
-          const videoTransceiver = pc.getTransceivers().find(t => 
+          // Configure Transceiver directions before creating Answer
+          const transceivers = pc.getTransceivers();
+          const videoTransceiver = transceivers.find(t => 
             (t.receiver && t.receiver.track?.kind === 'video') || 
             (t.sender && t.sender.track?.kind === 'video')
           );
@@ -751,12 +696,18 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             videoTransceiver.direction = hasLocalVideo ? 'sendrecv' : 'recvonly';
           }
 
-          const audioTransceiver = pc.getTransceivers().find(t => 
+          const audioTransceivers = transceivers.filter(t => 
             (t.receiver && t.receiver.track?.kind === 'audio') || 
             (t.sender && t.sender.track?.kind === 'audio')
           );
-          if (audioTransceiver) {
-            audioTransceiver.direction = 'sendrecv';
+          // First audio transceiver is microphone
+          if (audioTransceivers[0]) {
+            audioTransceivers[0].direction = 'sendrecv';
+          }
+          // Second audio transceiver is screen share audio
+          if (audioTransceivers[1]) {
+            const hasLocalScreenAudio = !!(screenStreamRef.current && screenStreamRef.current.getAudioTracks().some(t => t.readyState === 'live'));
+            audioTransceivers[1].direction = hasLocalScreenAudio ? 'sendrecv' : 'recvonly';
           }
 
           const answer = await pc.createAnswer();
@@ -768,24 +719,24 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             channelId
           });
 
-          // Sync tracks received from the offer immediately
+          // Sync tracks received immediately after remote description set
           syncPeerMedia(senderUserId, pc);
         } catch (e) {
-          console.error('Error handling WebRTC offer:', e);
+          console.error('[WebRTC] Error handling offer:', e);
         }
       } else if (signal.type === 'answer') {
         try {
           if (pc.signalingState !== 'have-local-offer') {
-            console.warn('[WebRTC] Ignoring stale answer from', senderUserId, 'in state', pc.signalingState);
+            console.warn('[WebRTC] Ignoring answer in state:', pc.signalingState);
             return;
           }
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           await processPendingCandidates(senderUserId, pc);
 
-          // Sync tracks confirmed by the answer
+          // Sync tracks confirmed by answer
           syncPeerMedia(senderUserId, pc);
         } catch (e) {
-          console.error('Error handling WebRTC answer:', e);
+          console.error('[WebRTC] Error handling answer:', e);
         }
       } else if (signal.type === 'candidate' && signal.candidate) {
         try {
@@ -798,7 +749,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             pendingIceCandidates.current.get(senderUserId)!.push(signal.candidate);
           }
         } catch (e) {
-          console.error('Error adding ICE candidate:', e);
+          console.error('[WebRTC] Error adding ICE candidate:', e);
         }
       }
     });
@@ -874,10 +825,6 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
-    if (micGainNodeRef.current) {
-      micGainNodeRef.current.gain.value = nextState ? 0 : 1;
-    }
-
     const chanId = currentVoiceChannelRef.current || activeCallRef.current?.conversationId;
     if (socket && chanId) {
       socket.emit('voice_state_update', {
@@ -933,9 +880,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const stopScreenShare = async () => {
-    // 1. Set video transceivers to recvonly and replaceTrack(null) first so senders detach cleanly
+    // 1. Reset transceivers to recvonly and replaceTrack(null)
     for (const pc of peerConnections.current.values()) {
-      const videoTransceiver = pc.getTransceivers().find(t => 
+      const transceivers = pc.getTransceivers();
+      const videoTransceiver = transceivers.find(t => 
         (t.sender && t.sender.track?.kind === 'video') || 
         (t.receiver && t.receiver.track?.kind === 'video')
       );
@@ -943,57 +891,29 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
           videoTransceiver.direction = 'recvonly';
           await videoTransceiver.sender.replaceTrack(null).catch(() => {});
-        } catch (e) {
-          console.warn('Error resetting video transceiver:', e);
-        }
+        } catch (e) {}
+      }
+
+      const audioTransceivers = transceivers.filter(t => 
+        (t.sender && t.sender.track?.kind === 'audio') || 
+        (t.receiver && t.receiver.track?.kind === 'audio')
+      );
+      // Screen audio is the second transceiver
+      if (audioTransceivers[1]) {
+        try {
+          audioTransceivers[1].direction = 'recvonly';
+          await audioTransceivers[1].sender.replaceTrack(null).catch(() => {});
+        } catch (e) {}
       }
     }
 
-    // 2. Stop and clear screen stream tracks
+    // 2. Stop tracks
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach(t => t.stop());
       screenStreamRef.current = null;
       setScreenStream(null);
     }
     setIsScreenSharing(false);
-
-    // 3. Revert active audio stream & track back to original microphone
-    const originalMicTrack = localStreamRef.current?.getAudioTracks()[0];
-    currentActiveAudioTrackRef.current = originalMicTrack || null;
-    activeAudioStreamRef.current = localStreamRef.current;
-
-    if (originalMicTrack) {
-      for (const pc of peerConnections.current.values()) {
-        const audioTransceiver = pc.getTransceivers().find(t => 
-          t.sender?.track?.kind === 'audio' || t.receiver?.track?.kind === 'audio'
-        );
-        if (audioTransceiver && audioTransceiver.sender) {
-          await audioTransceiver.sender.replaceTrack(originalMicTrack).catch(() => {});
-        }
-      }
-    }
-
-    // Disconnect screen audio mixer nodes
-    if (screenSourceNodeRef.current) {
-      screenSourceNodeRef.current.disconnect();
-      screenSourceNodeRef.current = null;
-    }
-    screenAudioSourceStreamRef.current = null;
-    if (screenGainNodeRef.current) {
-      screenGainNodeRef.current.disconnect();
-      screenGainNodeRef.current = null;
-    }
-    if (micSourceNodeRef.current) {
-      micSourceNodeRef.current.disconnect();
-      micSourceNodeRef.current = null;
-    }
-    if (micGainNodeRef.current) {
-      micGainNodeRef.current.disconnect();
-      micGainNodeRef.current = null;
-    }
-    if (destNodeRef.current) {
-      destNodeRef.current = null;
-    }
 
     const chanId = currentVoiceChannelRef.current || activeCallRef.current?.conversationId;
     if (socket && chanId) {
@@ -1003,7 +923,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
     }
 
-    // 4. Renegotiate with all peers to notify removal
+    // 3. Renegotiate with all peers to notify removal
     for (const peerId of peerConnections.current.keys()) {
       await makeOffer(peerId, chanId);
     }
@@ -1016,7 +936,14 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       try {
         let stream: MediaStream;
         try {
-          stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+          stream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+              frameRate: { ideal: 30, max: 60 },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            },
+            audio: true
+          });
         } catch (mediaErr: any) {
           if (mediaErr.name === 'NotAllowedError') throw mediaErr;
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
@@ -1029,90 +956,47 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const videoTrack = stream.getVideoTracks()[0];
         const screenAudioTrack = stream.getAudioTracks()[0];
 
-        // 1. Audio Mixing on Sender side (mix Microphone + Screen Audio)
-        if (screenAudioTrack) {
-          try {
-            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-            if (!audioMixerRef.current || audioMixerRef.current.state === 'closed') {
-              audioMixerRef.current = new AudioContextClass();
-            }
-            const ctx = audioMixerRef.current;
-            if (ctx.state === 'suspended') {
-              await ctx.resume();
-            }
-
-            // Keep AudioContext active (never auto-suspended by browser even in background tabs)
-            try {
-              const osc = ctx.createOscillator();
-              const silenceGain = ctx.createGain();
-              silenceGain.gain.value = 0;
-              osc.connect(silenceGain);
-              silenceGain.connect(ctx.destination);
-              osc.start();
-            } catch (e) {}
-
-            const dest = ctx.createMediaStreamDestination();
-            destNodeRef.current = dest;
-            activeAudioStreamRef.current = dest.stream;
-
-            // Connect mic to destination if present
-            if (localStreamRef.current && localStreamRef.current.getAudioTracks().length > 0) {
-              const micSource = ctx.createMediaStreamSource(localStreamRef.current);
-              const micGain = ctx.createGain();
-              micGain.gain.value = isMutedRef.current ? 0 : 1;
-              micSource.connect(micGain);
-              micGain.connect(dest);
-              micSourceNodeRef.current = micSource;
-              micGainNodeRef.current = micGain;
-            }
-
-            // Connect screen audio to destination using persistent MediaStream ref
-            const audioStreamForSource = new MediaStream([screenAudioTrack]);
-            screenAudioSourceStreamRef.current = audioStreamForSource;
-            const screenSource = ctx.createMediaStreamSource(audioStreamForSource);
-            const screenGain = ctx.createGain();
-            screenGain.gain.value = 1;
-            screenSource.connect(screenGain);
-            screenGain.connect(dest);
-            screenSourceNodeRef.current = screenSource;
-            screenGainNodeRef.current = screenGain;
-
-            const compositeAudioTrack = dest.stream.getAudioTracks()[0];
-            currentActiveAudioTrackRef.current = compositeAudioTrack;
-
-            // Seamlessly swap audio senders on all active peer connections
-            for (const pc of peerConnections.current.values()) {
-              const audioTransceiver = pc.getTransceivers().find(t => 
-                t.sender?.track?.kind === 'audio' || t.receiver?.track?.kind === 'audio'
-              );
-              if (audioTransceiver && audioTransceiver.sender) {
-                await audioTransceiver.sender.replaceTrack(compositeAudioTrack).catch(() => {});
-              }
-            }
-          } catch (mixErr) {
-            console.warn('[Web Audio] Screen audio mix error:', mixErr);
-          }
-        }
-
-        // 2. Set video transceivers to sendrecv, associate stream, and replaceTrack(videoTrack)
+        // Attach tracks to all peer connections
         for (const pc of peerConnections.current.values()) {
-          const videoTransceiver = pc.getTransceivers().find(t => 
+          const transceivers = pc.getTransceivers();
+
+          // Video transceiver
+          let videoTransceiver = transceivers.find(t => 
             (t.sender && t.sender.track?.kind === 'video') || 
             (t.receiver && t.receiver.track?.kind === 'video')
           );
-
+          if (!videoTransceiver) {
+            videoTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
+          } else {
+            videoTransceiver.direction = 'sendrecv';
+          }
           if (videoTrack) {
-            if (videoTransceiver) {
-              videoTransceiver.direction = 'sendrecv';
-              if ('setStreams' in videoTransceiver.sender) {
-                try {
-                  (videoTransceiver.sender as any).setStreams(stream);
-                } catch (e) {}
-              }
-              await videoTransceiver.sender.replaceTrack(videoTrack).catch(() => {});
-            } else {
-              pc.addTrack(videoTrack, stream);
+            if ('setStreams' in videoTransceiver.sender) {
+              try {
+                (videoTransceiver.sender as any).setStreams(stream);
+              } catch (e) {}
             }
+            await videoTransceiver.sender.replaceTrack(videoTrack).catch(() => {});
+          }
+
+          // Screen audio transceiver
+          const audioTransceivers = transceivers.filter(t => 
+            (t.sender && t.sender.track?.kind === 'audio') || 
+            (t.receiver && t.receiver.track?.kind === 'audio')
+          );
+          let screenAudioTransceiver = audioTransceivers[1];
+          if (!screenAudioTransceiver) {
+            screenAudioTransceiver = pc.addTransceiver('audio', { direction: screenAudioTrack ? 'sendrecv' : 'recvonly' });
+          } else {
+            screenAudioTransceiver.direction = screenAudioTrack ? 'sendrecv' : 'recvonly';
+          }
+          if (screenAudioTrack) {
+            if ('setStreams' in screenAudioTransceiver.sender) {
+              try {
+                (screenAudioTransceiver.sender as any).setStreams(stream);
+              } catch (e) {}
+            }
+            await screenAudioTransceiver.sender.replaceTrack(screenAudioTrack).catch(() => {});
           }
         }
 
@@ -1132,7 +1016,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
         }
 
-        // 3. Renegotiate video with all peers immediately!
+        // Renegotiate with all peers immediately
         for (const peerId of peerConnections.current.keys()) {
           await makeOffer(peerId, chanId);
         }
