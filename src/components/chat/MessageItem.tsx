@@ -380,9 +380,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </div>
           </div>
         ) : (
-          <div className="text-sm text-[#dbdee1] leading-relaxed mt-0.5">
-            {message.content && renderMessageContent(message.content)}
-          </div>
+          message.content && (!message.poll || !message.content.startsWith('📊 Polling:')) ? (
+            <div className="text-sm text-[#dbdee1] leading-relaxed mt-0.5">
+              {renderMessageContent(message.content)}
+            </div>
+          ) : null
         )}
 
         {/* Interactive Poll Rendering */}

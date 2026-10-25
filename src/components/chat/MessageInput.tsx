@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { PlusCircle, Smile, Sparkles, X, Image as ImageIcon, Send, Loader2, File as FileIcon, FileText, Film, Music, FileArchive, Paperclip, ShieldAlert, Mic, MicOff, Square, BarChart2, AtSign, Users } from 'lucide-react';
+import { PlusCircle, Smile, Sparkles, X, Image as ImageIcon, Send, Loader2, File as FileIcon, FileText, Film, Music, FileArchive, Paperclip, ShieldAlert, Mic, MicOff, Square, BarChart2, AtSign, Users, Volume2 } from 'lucide-react';
 import { Message, Poll, ServerMember, Role } from '../../types';
 import { EmojiPicker } from './EmojiPicker';
 import { StickerPicker } from './StickerPicker';
 import { CreatePollModal } from '../modals/CreatePollModal';
+import { SoundboardModal } from '../voice/SoundboardModal';
 import { useToast } from '../../context/ToastContext';
 import { useAuth } from '../../context/AuthContext';
 import { apiUrl } from '../../config/api';
@@ -11,6 +12,9 @@ import { apiUrl } from '../../config/api';
 interface MessageInputProps {
   channelName: string;
   isDM?: boolean;
+  serverId?: string;
+  serverName?: string;
+  channelId?: string;
   members?: ServerMember[];
   roles?: Role[];
   replyingTo: Message | null;
@@ -23,6 +27,9 @@ interface MessageInputProps {
 export const MessageInput: React.FC<MessageInputProps> = ({
   channelName,
   isDM,
+  serverId,
+  serverName,
+  channelId,
   members,
   roles,
   replyingTo,
@@ -37,6 +44,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
+  const [showSoundboardModal, setShowSoundboardModal] = useState(false);
   const [attachments, setAttachments] = useState<any[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -543,9 +551,19 @@ export const MessageInput: React.FC<MessageInputProps> = ({
               type="button"
               onClick={() => setShowPollModal(true)}
               title="Buat Polling"
-              className="p-1.5 rounded-xl text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors mr-2 cursor-pointer flex-shrink-0"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 transition-colors mr-1 cursor-pointer flex-shrink-0"
             >
               <BarChart2 size={19} />
+            </button>
+
+            {/* Soundboard Launcher Button (Maks 10 per Server Chat) */}
+            <button
+              type="button"
+              onClick={() => setShowSoundboardModal(true)}
+              title={isDM ? 'Soundboard Voice' : 'Soundboard Server (Maks. 10)'}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors mr-2 cursor-pointer flex-shrink-0"
+            >
+              <Volume2 size={19} />
             </button>
 
             {/* Textarea */}
@@ -715,6 +733,15 @@ export const MessageInput: React.FC<MessageInputProps> = ({
           onSendMessage('', [], undefined, replyingTo?.id, poll);
           onCancelReply();
         }}
+      />
+
+      {/* Soundboard Modal (Server Chat / Voice) */}
+      <SoundboardModal
+        isOpen={showSoundboardModal}
+        onClose={() => setShowSoundboardModal(false)}
+        serverId={serverId}
+        serverName={serverName || channelName}
+        channelId={channelId}
       />
     </div>
   );

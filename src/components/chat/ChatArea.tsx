@@ -126,12 +126,25 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       ));
     };
 
+    const handleChannelSoundboard = (data: { userId: string; soundName?: string; soundUrl?: string }) => {
+      if (data.userId !== user?.id && data.soundUrl) {
+        try {
+          const audio = new Audio(data.soundUrl);
+          audio.volume = 0.8;
+          audio.play().catch(e => console.warn('Channel soundboard audio error:', e));
+        } catch (err) {
+          console.warn(err);
+        }
+      }
+    };
+
     socket.on('new_message', handleNewMessage);
     socket.on('message_updated', handleMessageUpdated);
     socket.on('message_deleted', handleMessageDeleted);
     socket.on('reaction_updated', handleReactionUpdated);
     socket.on('poll_updated', handlePollUpdated);
     socket.on('message_pinned_updated', handleMessagePinned);
+    socket.on('channel_soundboard_played', handleChannelSoundboard);
 
     return () => {
       socket.off('new_message', handleNewMessage);
@@ -140,8 +153,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       socket.off('reaction_updated', handleReactionUpdated);
       socket.off('poll_updated', handlePollUpdated);
       socket.off('message_pinned_updated', handleMessagePinned);
+      socket.off('channel_soundboard_played', handleChannelSoundboard);
     };
-  }, [socket, activeId]);
+  }, [socket, activeId, user?.id]);
 
   const channelTypers = activeId ? (typingUsers[activeId] || []).filter(u => u.userId !== user?.id) : [];
 
@@ -433,6 +447,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       <MessageInput
         channelName={displayName}
         isDM={!!conversation}
+        serverId={server?.id}
+        serverName={server?.name}
+        channelId={activeId || undefined}
         members={server?.members}
         roles={server?.roles}
         replyingTo={replyingTo}

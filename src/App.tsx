@@ -322,6 +322,7 @@ const MainLayout: React.FC = () => {
           {activeChannel?.type === 'voice' && currentVoiceChannel === activeChannel.id ? (
             <VoiceChannelRoom 
               channelName={activeChannel.name}
+              serverId={activeServer?.id}
               isSidebarCollapsed={isSidebarCollapsed}
               onToggleSidebar={toggleSidebar}
             />

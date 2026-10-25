@@ -114,12 +114,14 @@ export const VideoSharePlayer: React.FC<{
 
 interface VoiceChannelRoomProps {
   channelName: string;
+  serverId?: string;
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
 }
 
 export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ 
   channelName,
+  serverId,
   isSidebarCollapsed = false,
   onToggleSidebar
 }) => {
@@ -453,7 +455,12 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
       </div>
 
       {/* Interactive Voice Soundboard Modal */}
-      <SoundboardModal isOpen={showSoundboard} onClose={() => setShowSoundboard(false)} />
+      <SoundboardModal
+        isOpen={showSoundboard}
+        onClose={() => setShowSoundboard(false)}
+        serverId={serverId}
+        serverName={channelName}
+      />
     </div>
   );
 };

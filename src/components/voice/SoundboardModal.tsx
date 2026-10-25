@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Music, X, Volume2, Plus, Trash2, Upload, AlertCircle, Sparkles, Check } from 'lucide-react';
 import { useVoice } from '../../context/VoiceContext';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import { apiUrl } from '../../config/api';
 
 export interface CustomSoundItem {
@@ -16,16 +17,28 @@ export interface CustomSoundItem {
 interface SoundboardModalProps {
   isOpen: boolean;
   onClose: () => void;
+  serverId?: string;
+  serverName?: string;
+  channelId?: string;
 }
 
 const EMOJI_OPTIONS = ['🔊', '🎶', '💥', '🎺', '🤣', '🎮', '⚡', '🔔', '📣', '🦆', '🏆', '✨', '💣', '🚀', '🎯', '🐱'];
-const MAX_SOUNDBOARDS = 5;
+const MAX_SOUNDBOARDS = 10;
 const MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024; // 1MB
 
-export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClose }) => {
+export const SoundboardModal: React.FC<SoundboardModalProps> = ({
+  isOpen,
+  onClose,
+  serverId,
+  serverName,
+  channelId
+}) => {
   const { user } = useAuth();
   const { playSoundboard, currentVoiceChannel, activeCall } = useVoice();
-  const storageKey = `aerocord_custom_soundboards_${user?.id || 'guest'}`;
+  const { socket } = useSocket();
+  const storageKey = serverId
+    ? `aerocord_custom_soundboards_server_${serverId}`
+    : `aerocord_custom_soundboards_${user?.id || 'guest'}`;
 
   const [sounds, setSounds] = useState<CustomSoundItem[]>([]);
   const [activeSoundId, setActiveSoundId] = useState<string | null>(null);
@@ -42,7 +55,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load custom soundboards on mount/user change
+  // Load custom soundboards on mount/user/server change
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
@@ -67,12 +80,20 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
   const handlePlaySound = (item: CustomSoundItem) => {
     setActiveSoundId(item.id);
 
-    // If connected to voice channel or call, broadcast via socket
-    // (the server will broadcast to room and VoiceContext will play it once)
+    // If connected to voice channel or call, broadcast via voice socket
     if (currentVoiceChannel || activeCall) {
       playSoundboard(item.id, item.name, item.audioUrl);
     } else {
-      // If not in a voice channel, play locally for preview
+      // If in a chat channel, broadcast soundboard to the channel chat room
+      if (socket && channelId) {
+        socket.emit('channel_soundboard', {
+          channelId,
+          soundId: item.id,
+          soundName: item.name,
+          soundUrl: item.audioUrl
+        });
+      }
+      // Play locally
       try {
         const audio = new Audio(item.audioUrl);
         audio.volume = 0.85;
@@ -122,7 +143,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
     setFormError('');
 
     if (sounds.length >= MAX_SOUNDBOARDS) {
-      setFormError(`Maksimal ${MAX_SOUNDBOARDS} soundboard per akun. Hapus soundboard lama terlebih dahulu.`);
+      setFormError(`Maksimal ${MAX_SOUNDBOARDS} soundboard per server chat. Hapus soundboard lama terlebih dahulu.`);
       return;
     }
 
@@ -209,12 +230,12 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
             </div>
             <div>
               <h3 className="text-sm font-bold text-white flex items-center space-x-1.5">
-                <span>Soundboard Voice</span>
+                <span>{serverName ? `Soundboard • #${serverName}` : (serverId ? 'Soundboard Server' : 'Soundboard Voice')}</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 font-bold border border-indigo-500/20">
                   {sounds.length}/{MAX_SOUNDBOARDS} Suara
                 </span>
               </h3>
-              <p className="text-[11px] text-slate-400">Putar suara kustom Anda ke semua peserta voice channel</p>
+              <p className="text-[11px] text-slate-400">Putar suara kustom ke channel obrolan atau voice room</p>
             </div>
           </div>
           <button
@@ -391,7 +412,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({ isOpen, onClos
 
             {/* Footer Hint */}
             <div className="pt-2 border-t border-white/5 text-center text-[10px] text-slate-400">
-              Maksimal 5 soundboard per akun & maksimal 1MB per file.
+              Maksimal {MAX_SOUNDBOARDS} soundboard per server chat & maksimal 1MB per file.
             </div>
           </div>
         )}
