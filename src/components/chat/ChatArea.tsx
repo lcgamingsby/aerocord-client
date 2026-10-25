@@ -450,6 +450,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         serverId={server?.id}
         serverName={server?.name}
         channelId={activeId || undefined}
+        isOwner={Boolean(server && user && server.ownerId === user.id)}
         members={server?.members}
         roles={server?.roles}
         replyingTo={replyingTo}

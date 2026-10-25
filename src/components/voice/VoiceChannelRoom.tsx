@@ -115,6 +115,7 @@ export const VideoSharePlayer: React.FC<{
 interface VoiceChannelRoomProps {
   channelName: string;
   serverId?: string;
+  isOwner?: boolean;
   isSidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
 }
@@ -122,6 +123,7 @@ interface VoiceChannelRoomProps {
 export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({ 
   channelName,
   serverId,
+  isOwner = false,
   isSidebarCollapsed = false,
   onToggleSidebar
 }) => {
@@ -460,6 +462,7 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
         onClose={() => setShowSoundboard(false)}
         serverId={serverId}
         serverName={channelName}
+        isOwner={isOwner}
       />
     </div>
   );

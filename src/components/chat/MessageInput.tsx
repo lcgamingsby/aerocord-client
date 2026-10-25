@@ -15,6 +15,7 @@ interface MessageInputProps {
   serverId?: string;
   serverName?: string;
   channelId?: string;
+  isOwner?: boolean;
   members?: ServerMember[];
   roles?: Role[];
   replyingTo: Message | null;
@@ -30,6 +31,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
   serverId,
   serverName,
   channelId,
+  isOwner = false,
   members,
   roles,
   replyingTo,
@@ -742,6 +744,7 @@ export const MessageInput: React.FC<MessageInputProps> = ({
         serverId={serverId}
         serverName={serverName || channelName}
         channelId={channelId}
+        isOwner={isOwner}
       />
     </div>
   );

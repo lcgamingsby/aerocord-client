@@ -20,18 +20,20 @@ interface SoundboardModalProps {
   serverId?: string;
   serverName?: string;
   channelId?: string;
+  isOwner?: boolean;
 }
 
 const EMOJI_OPTIONS = ['🔊', '🎶', '💥', '🎺', '🤣', '🎮', '⚡', '🔔', '📣', '🦆', '🏆', '✨', '💣', '🚀', '🎯', '🐱'];
 const MAX_SOUNDBOARDS = 10;
-const MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024; // 1MB
+const MAX_FILE_SIZE_BYTES = 1.5 * 1024 * 1024; // 1.5MB
 
 export const SoundboardModal: React.FC<SoundboardModalProps> = ({
   isOpen,
   onClose,
   serverId,
   serverName,
-  channelId
+  channelId,
+  isOwner = false
 }) => {
   const { user } = useAuth();
   const { playSoundboard, currentVoiceChannel, activeCall } = useVoice();
@@ -39,6 +41,9 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({
   const storageKey = serverId
     ? `aerocord_custom_soundboards_server_${serverId}`
     : `aerocord_custom_soundboards_${user?.id || 'guest'}`;
+
+  // Only the server owner can upload/delete soundboards when in a server context
+  const canManage = !serverId || Boolean(isOwner);
 
   const [sounds, setSounds] = useState<CustomSoundItem[]>([]);
   const [activeSoundId, setActiveSoundId] = useState<string | null>(null);
@@ -110,6 +115,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({
 
   const handleDeleteSound = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    if (!canManage) return;
     const filtered = sounds.filter(s => s.id !== id);
     saveSounds(filtered);
   };
@@ -125,7 +131,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({
     }
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setFormError(`Ukuran file melebihi batas 1MB (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
+      setFormError(`Ukuran file melebihi batas 1.5MB (${(file.size / (1024 * 1024)).toFixed(1)} MB).`);
       return;
     }
 
@@ -141,6 +147,11 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({
   const handleCreateSound = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
+
+    if (!canManage) {
+      setFormError('Hanya Owner server yang memiliki izin untuk menambahkan soundboard.');
+      return;
+    }
 
     if (sounds.length >= MAX_SOUNDBOARDS) {
       setFormError(`Maksimal ${MAX_SOUNDBOARDS} soundboard per server chat. Hapus soundboard lama terlebih dahulu.`);
@@ -351,15 +362,21 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({
         ) : (
           /* List Mode */
           <div className="space-y-3">
-            {sounds.length < MAX_SOUNDBOARDS && (
-              <button
-                type="button"
-                onClick={() => { setShowAddForm(true); setFormError(''); }}
-                className="w-full py-2.5 px-3 bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 text-indigo-300 hover:text-white rounded-2xl text-xs font-bold transition-all flex items-center justify-center space-x-2 cursor-pointer"
-              >
-                <Plus size={15} />
-                <span>Tambah Soundboard Sendiri ({sounds.length}/{MAX_SOUNDBOARDS})</span>
-              </button>
+            {canManage ? (
+              sounds.length < MAX_SOUNDBOARDS && (
+                <button
+                  type="button"
+                  onClick={() => { setShowAddForm(true); setFormError(''); }}
+                  className="w-full py-2.5 px-3 bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 text-indigo-300 hover:text-white rounded-2xl text-xs font-bold transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  <Plus size={15} />
+                  <span>Tambah Soundboard ({sounds.length}/{MAX_SOUNDBOARDS})</span>
+                </button>
+              )
+            ) : (
+              <div className="py-2 px-3 rounded-xl bg-white/5 border border-white/5 text-center text-[11px] text-slate-400">
+                👑 Hanya Owner server yang dapat mengunggah dan mengelola soundboard.
+              </div>
             )}
 
             {sounds.length === 0 ? (
@@ -369,7 +386,9 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({
                 </div>
                 <div className="text-xs font-bold text-slate-200">Belum Ada Soundboard</div>
                 <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                  Tambahkan file suara kustom Anda (maks. 1MB per file, hingga 5 suara per akun) untuk diputar di voice chat.
+                  {serverId
+                    ? 'Owner server belum menambahkan soundboard. Hanya Owner yang dapat mengunggah soundboard ke server ini.'
+                    : 'Tambahkan file audio kustom Anda (maks. 1.5MB per file) untuk diputar di panggilan.'}
                 </p>
               </div>
             ) : (
@@ -390,14 +409,16 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({
                         <span className="text-xl">{item.emoji}</span>
                         <div className="flex items-center space-x-1">
                           <Volume2 size={13} className={`${isPlaying ? 'text-white animate-bounce' : 'text-slate-500 group-hover:text-indigo-400'}`} />
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteSound(e, item.id)}
-                            title="Hapus Soundboard"
-                            className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteSound(e, item.id)}
+                              title="Hapus Soundboard"
+                              className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                       </div>
                       <div className="font-bold text-xs truncate">{item.name}</div>
@@ -412,7 +433,7 @@ export const SoundboardModal: React.FC<SoundboardModalProps> = ({
 
             {/* Footer Hint */}
             <div className="pt-2 border-t border-white/5 text-center text-[10px] text-slate-400">
-              Maksimal {MAX_SOUNDBOARDS} soundboard per server chat & maksimal 1MB per file.
+              Maksimal {MAX_SOUNDBOARDS} soundboard per server chat & maksimal 1.5MB per file.
             </div>
           </div>
         )}

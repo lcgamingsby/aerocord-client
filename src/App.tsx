@@ -323,6 +323,7 @@ const MainLayout: React.FC = () => {
             <VoiceChannelRoom 
               channelName={activeChannel.name}
               serverId={activeServer?.id}
+              isOwner={Boolean(activeServer && user && activeServer.ownerId === user.id)}
               isSidebarCollapsed={isSidebarCollapsed}
               onToggleSidebar={toggleSidebar}
             />
