@@ -101,7 +101,28 @@ const parseInlineMarkdown = (text: string): React.ReactNode => {
           parts.push(<span key={`s-${keyIdx++}`} className="line-through text-gray-400">{content}</span>);
         } else if (p.type === 'url') {
           parts.push(
-            <a key={`u-${keyIdx++}`} href={content} target="_blank" rel="noopener noreferrer" className="text-[#00a8fc] hover:underline cursor-pointer">
+            <a
+              key={`u-${keyIdx++}`}
+              href={content}
+              onClick={(e) => {
+                e.preventDefault();
+                try {
+                  const parsed = new URL(content);
+                  const stored = localStorage.getItem('trusted_external_domains');
+                  const list: string[] = stored ? JSON.parse(stored) : [];
+                  if (list.includes(parsed.hostname)) {
+                    window.open(content, '_blank', 'noopener,noreferrer');
+                    return;
+                  }
+                } catch {
+                  // Fallback
+                }
+                window.dispatchEvent(new CustomEvent('open-external-link-modal', { detail: { url: content } }));
+              }}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[#00a8fc] hover:underline cursor-pointer"
+            >
               {content}
             </a>
           );

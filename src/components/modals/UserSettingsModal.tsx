@@ -32,7 +32,7 @@ const getBannerStyle = (bannerValue?: string): React.CSSProperties => {
 };
 
 export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, onClose }) => {
-  const { user, token, updateProfile, logout } = useAuth();
+  const { user, token, updateProfile, logout, logoutAllDevices } = useAuth();
   const { isMuted } = useVoice();
   const { showSuccess, showError } = useToast();
   const { theme, setTheme } = useTheme();
@@ -175,8 +175,25 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
       }
     } catch (err: any) {
       setPasswordChangeError(err.message || 'Kesalahan koneksi ke server.');
-    } finally {
       setIsChangingPassword(false);
+    }
+  };
+
+  const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
+
+  const handleLogoutAllDevices = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin keluar dari semua perangkat? Seluruh sesi login di browser dan perangkat lain akan segera dihentikan.')) {
+      return;
+    }
+    try {
+      setIsLoggingOutAll(true);
+      await logoutAllDevices();
+      showSuccess('Berhasil Keluar', 'Seluruh sesi di semua perangkat telah dihentikan.');
+      onClose();
+    } catch (err: any) {
+      showError('Gagal Keluar', err.message || 'Terjadi kesalahan saat membatalkan sesi.');
+    } finally {
+      setIsLoggingOutAll(false);
     }
   };
 
@@ -756,6 +773,44 @@ export const UserSettingsModal: React.FC<UserSettingsModalProps> = ({ isOpen, on
                         )}
                       </button>
                     </form>
+                  </div>
+                )}
+
+                {/* Sesi & Perangkat Aktif */}
+                {!isGuestUser && (
+                  <div className="p-5 rounded-2xl bg-[#0c0e14] border border-white/5 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 rounded-lg bg-rose-500/10 text-rose-400 flex items-center justify-center flex-shrink-0">
+                        <LogOut size={16} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-100">Sesi & Perangkat Aktif</h4>
+                        <p className="text-[11px] text-slate-400">
+                          Batalkan semua sesi login dan token aktif di seluruh browser atau perangkat lain yang pernah Anda gunakan.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={handleLogoutAllDevices}
+                        disabled={isLoggingOutAll}
+                        className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-semibold text-xs rounded-xl transition-all cursor-pointer flex items-center space-x-2 disabled:opacity-50"
+                      >
+                        {isLoggingOutAll ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-rose-400 border-t-transparent rounded-full animate-spin" />
+                            <span>Memproses...</span>
+                          </>
+                        ) : (
+                          <>
+                            <LogOut size={14} />
+                            <span>Keluar dari Semua Perangkat</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
 

@@ -13,6 +13,7 @@ interface AuthContextType {
   register: (email: string, code: string, avatar?: string) => Promise<{ success: boolean; message?: string; error?: string }>;
   guestLogin: (guestId?: string, customName?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  logoutAllDevices: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<boolean>;
   refreshFriends: () => Promise<void>;
   sendFriendRequest: (target: { username?: string; discriminator?: string; userId?: string }) => Promise<{ success: boolean; error?: string }>;
@@ -206,6 +207,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const logoutAllDevices = async () => {
+    const currentToken = token || localStorage.getItem('aerocord_token');
+
+    // Immediately remove local credentials
+    localStorage.removeItem('aerocord_token');
+    try {
+      sessionStorage.clear();
+    } catch {}
+    setToken(null);
+    setUser(null);
+    setFriends([]);
+
+    if (currentToken) {
+      try {
+        await fetch(apiUrl('/api/auth/logout-all'), {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${currentToken}` }
+        });
+      } catch (err) {
+        console.error('Logout-all API error:', err);
+      }
+    }
+  };
+
   const updateProfile = async (updates: Partial<User>) => {
     if (!token) return false;
     try {
@@ -286,6 +311,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         guestLogin,
         logout,
+        logoutAllDevices,
         updateProfile,
         refreshFriends,
         sendFriendRequest,

@@ -15,14 +15,27 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language = 'text' })
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // HTML entity escaper to eliminate Stored XSS via code snippet injection
+  const escapeHtml = (str: string): string => {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
   // Simple syntax colorizer for keywords, strings, comments, numbers
   const highlightSyntax = (raw: string) => {
     const lines = raw.split('\n');
     return lines.map((line, lineIdx) => {
-      // Tokens highlight via regex
-      const formatted = line
+      // Step 1: Escape HTML first for absolute XSS security
+      const safeLine = escapeHtml(line);
+
+      // Step 2: Tokens highlight via regex on escaped content
+      const formatted = safeLine
         .replace(/(import|export|from|const|let|var|function|return|if|else|switch|case|default|class|extends|interface|type|async|await|try|catch|new|for|while|in|of|def|elif|lambda|self|fn|pub|mut|struct|enum|impl|package|func|SELECT|FROM|WHERE|INSERT|UPDATE|DELETE|JOIN)\b/g, '<span class="text-indigo-400 font-semibold">$1</span>')
-        .replace(/(".*?"|'.*?'|`.*?`)/g, '<span class="text-emerald-300">$1</span>')
+        .replace(/(&quot;.*?&quot;|&#039;.*?&#039;|`.*?`)/g, '<span class="text-emerald-300">$1</span>')
         .replace(/(\/\/.*|\/\*.*\*\/|#.*|--.*)/g, '<span class="text-slate-500 italic">$1</span>')
         .replace(/\b(\d+)\b/g, '<span class="text-amber-400">$1</span>')
         .replace(/\b(true|false|null|undefined|None|True|False|nil)\b/g, '<span class="text-cyan-400 font-bold">$1</span>');

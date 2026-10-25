@@ -20,6 +20,7 @@ import { CreateChannelModal } from './components/modals/CreateChannelModal';
 import { UserSettingsModal } from './components/modals/UserSettingsModal';
 import { ServerSettingsModal } from './components/modals/ServerSettingsModal';
 import { UserProfileModal } from './components/modals/UserProfileModal';
+import { ExternalLinkModal } from './components/modals/ExternalLinkModal';
 import { apiUrl } from './config/api';
 import { Sparkles, Plus } from 'lucide-react';
 
@@ -46,6 +47,20 @@ const MainLayout: React.FC = () => {
       return false;
     }
   });
+
+  const [externalLinkUrl, setExternalLinkUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleOpenExternal = (e: any) => {
+      if (e.detail?.url) {
+        setExternalLinkUrl(e.detail.url);
+      }
+    };
+    window.addEventListener('open-external-link-modal', handleOpenExternal);
+    return () => {
+      window.removeEventListener('open-external-link-modal', handleOpenExternal);
+    };
+  }, []);
 
   const toggleSidebar = useCallback(() => {
     setIsSidebarCollapsed(prev => {
@@ -417,6 +432,12 @@ const MainLayout: React.FC = () => {
       <UserSettingsModal
         isOpen={isUserSettingsOpen}
         onClose={() => setIsUserSettingsOpen(false)}
+      />
+
+      <ExternalLinkModal
+        isOpen={!!externalLinkUrl}
+        url={externalLinkUrl || ''}
+        onClose={() => setExternalLinkUrl(null)}
       />
     </div>
   );
