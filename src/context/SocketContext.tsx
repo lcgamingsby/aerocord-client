@@ -150,14 +150,43 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     socket.emit('add_reaction', { messageId, emoji });
   }, [socket]);
 
+  // Channel-specific active typing states and debounce timers
+  const isCurrentlyTypingRef = useRef<{ [channelId: string]: boolean }>({});
+  const typingDebounceTimersRef = useRef<{ [channelId: string]: any }>({});
+
   const startTyping = useCallback((channelId: string) => {
-    if (!socket) return;
-    socket.emit('typing_start', { channelId });
+    if (!socket || !channelId) return;
+
+    // Emit typing_start only once when starting to type
+    if (!isCurrentlyTypingRef.current[channelId]) {
+      isCurrentlyTypingRef.current[channelId] = true;
+      socket.emit('typing_start', { channelId });
+    }
+
+    // Debounce auto-stop: reset timer on every keystroke
+    if (typingDebounceTimersRef.current[channelId]) {
+      clearTimeout(typingDebounceTimersRef.current[channelId]);
+    }
+
+    typingDebounceTimersRef.current[channelId] = setTimeout(() => {
+      isCurrentlyTypingRef.current[channelId] = false;
+      if (socket) {
+        socket.emit('typing_stop', { channelId });
+      }
+      delete typingDebounceTimersRef.current[channelId];
+    }, 2500);
   }, [socket]);
 
   const stopTyping = useCallback((channelId: string) => {
-    if (!socket) return;
-    socket.emit('typing_stop', { channelId });
+    if (!socket || !channelId) return;
+    if (typingDebounceTimersRef.current[channelId]) {
+      clearTimeout(typingDebounceTimersRef.current[channelId]);
+      delete typingDebounceTimersRef.current[channelId];
+    }
+    if (isCurrentlyTypingRef.current[channelId]) {
+      isCurrentlyTypingRef.current[channelId] = false;
+      socket.emit('typing_stop', { channelId });
+    }
   }, [socket]);
 
   return (

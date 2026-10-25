@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { User } from '../../types';
 import { Users, MessageSquare, Phone, Check, X, UserPlus, Search, Sparkles, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { UserProfileModal } from '../modals/UserProfileModal';
+import { useDebounce } from '../../utils/useDebounce';
 
 interface FriendsHubViewProps {
   onStartDMWithUser: (targetUserId: string) => void;
@@ -61,9 +62,13 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({
     ? acceptedFriends
     : [];
 
-  const filteredFriends = searchQuery.trim()
-    ? displayedFriends.filter(f => f.friend.username.toLowerCase().includes(searchQuery.toLowerCase()))
-    : displayedFriends;
+  const debouncedSearchQuery = useDebounce(searchQuery, 200);
+
+  const filteredFriends = useMemo(() => {
+    const q = debouncedSearchQuery.trim().toLowerCase();
+    if (!q) return displayedFriends;
+    return displayedFriends.filter(f => f.friend.username.toLowerCase().includes(q));
+  }, [displayedFriends, debouncedSearchQuery]);
 
   return (
     <div className="flex-1 flex flex-col bg-[#0d0f14] h-full overflow-hidden select-none relative">

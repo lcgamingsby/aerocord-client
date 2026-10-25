@@ -346,6 +346,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const dataArray = new Uint8Array(bufferLength);
 
           let wasSpeaking = false;
+          let silenceStartTimestamp: number | null = null;
+          const SILENCE_DEBOUNCE_MS = 350; // Debounce release buffer (prevents socket spam & avatar flickering)
 
           if (speakingIntervalRef.current) clearInterval(speakingIntervalRef.current);
 
@@ -353,6 +355,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             if (!analyserRef.current || isMutedRef.current) {
               if (wasSpeaking && socket && currentVoiceChannelRef.current) {
                 wasSpeaking = false;
+                silenceStartTimestamp = null;
                 socket.emit('voice_speaking', { channelId: currentVoiceChannelRef.current, isSpeaking: false });
               }
               return;
@@ -364,15 +367,32 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               sum += dataArray[i];
             }
             const average = sum / bufferLength;
-            const isSpeakingNow = average > 14;
+            const isCurrentlyLoud = average > 14;
 
-            if (isSpeakingNow !== wasSpeaking) {
-              wasSpeaking = isSpeakingNow;
-              if (socket && currentVoiceChannelRef.current) {
-                socket.emit('voice_speaking', { channelId: currentVoiceChannelRef.current, isSpeaking: isSpeakingNow });
+            if (isCurrentlyLoud) {
+              silenceStartTimestamp = null;
+              if (!wasSpeaking) {
+                wasSpeaking = true;
+                if (socket && currentVoiceChannelRef.current) {
+                  socket.emit('voice_speaking', { channelId: currentVoiceChannelRef.current, isSpeaking: true });
+                }
+              }
+            } else {
+              // Volume dropped below threshold - apply debounce release buffer
+              if (wasSpeaking) {
+                const now = Date.now();
+                if (silenceStartTimestamp === null) {
+                  silenceStartTimestamp = now;
+                } else if (now - silenceStartTimestamp >= SILENCE_DEBOUNCE_MS) {
+                  wasSpeaking = false;
+                  silenceStartTimestamp = null;
+                  if (socket && currentVoiceChannelRef.current) {
+                    socket.emit('voice_speaking', { channelId: currentVoiceChannelRef.current, isSpeaking: false });
+                  }
+                }
               }
             }
-          }, 150);
+          }, 100);
         }
       } catch (e) {
         console.warn('AudioContext speaking detector notice:', e);

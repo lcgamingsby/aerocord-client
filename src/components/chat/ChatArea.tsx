@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Hash, Volume2, Phone, Video, Users, AtSign, Sparkles, Pin, Search, ArrowLeft, X, Music, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Message, Channel, User, DirectMessageConversation, Server } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -6,6 +6,7 @@ import { useSocket } from '../../context/SocketContext';
 import { useVoice } from '../../context/VoiceContext';
 import { useToast } from '../../context/ToastContext';
 import { soundEffects } from '../../utils/soundEffects';
+import { useDebounce } from '../../utils/useDebounce';
 import { MessageItem } from './MessageItem';
 import { MessageInput } from './MessageInput';
 import { ImageLightboxModal } from '../modals/ImageLightboxModal';
@@ -47,6 +48,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   // New Features: Search, Pinned Messages
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 250);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showPinned, setShowPinned] = useState<boolean>(false);
 
@@ -158,9 +160,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     socket.emit('toggle_pin_message', { messageId });
   };
 
-  const filteredMessages = searchQuery.trim()
-    ? messages.filter(m => m.content.toLowerCase().includes(searchQuery.toLowerCase()) || m.author?.username.toLowerCase().includes(searchQuery.toLowerCase()))
-    : messages;
+  const filteredMessages = useMemo(() => {
+    const q = debouncedSearchQuery.trim().toLowerCase();
+    if (!q) return messages;
+    return messages.filter(m => 
+      m.content?.toLowerCase().includes(q) || 
+      m.author?.username?.toLowerCase().includes(q)
+    );
+  }, [messages, debouncedSearchQuery]);
 
   const pinnedMessages = messages.filter(m => m.isPinned);
 
