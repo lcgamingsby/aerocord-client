@@ -68,12 +68,16 @@ export const DirectCallModal: React.FC = () => {
 
   // Detect remote screen share stream
   let remoteScreenStream: MediaStream | null = null;
-  remoteStreams.forEach((stream) => {
-    const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live');
-    if (hasLiveVideo) {
-      remoteScreenStream = stream;
+  if (activeCall) {
+    const targetUserId = activeCall.targetUser.id;
+    const targetParticipant = voiceParticipants.find(p => p.userId === targetUserId);
+    if (targetParticipant?.isScreenSharing || activeCall.isVideo) {
+      const stream = remoteStreams.get(targetUserId);
+      if (stream && stream.getVideoTracks().some(t => t.readyState === 'live')) {
+        remoteScreenStream = stream;
+      }
     }
-  });
+  }
 
   // 1. Incoming Call Windowed Popup
   if (incomingCall) {

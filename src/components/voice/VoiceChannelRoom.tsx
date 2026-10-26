@@ -28,7 +28,15 @@ export const VideoSharePlayer: React.FC<{
 
     const tryPlay = () => {
       if (videoEl && videoEl.paused) {
-        videoEl.play().catch(err => console.warn('Video playback notice:', err));
+        videoEl.play().catch(err => {
+          console.warn('Video playback notice:', err);
+          if (err.name === 'NotAllowedError' && !videoEl.muted) {
+            // Autoplay policy blocked unmuted playback, mute temporarily to display the video feed
+            videoEl.muted = true;
+            setIsAudioMuted(true);
+            videoEl.play().catch(() => {});
+          }
+        });
       }
     };
 
@@ -176,6 +184,9 @@ export const VoiceChannelRoom: React.FC<VoiceChannelRoomProps> = ({
 
   remoteStreams.forEach((stream, peerId) => {
     const peerParticipant = voiceParticipants.find(p => p.userId === peerId);
+    // Remote peer must be actively sharing screen
+    if (!peerParticipant?.isScreenSharing) return;
+
     const hasLiveVideo = stream.getVideoTracks().some(t => t.readyState === 'live');
     if (hasLiveVideo) {
       const peerUser = peerParticipant?.user;
