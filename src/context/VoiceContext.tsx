@@ -164,29 +164,39 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Synchronize all media receivers for a peer connection
-  const syncPeerMedia = (peerId: string, conn: RTCPeerConnection) => {
+  const syncPeerMedia = (peerId: string, conn: RTCPeerConnection, forceRefresh = false) => {
+    const transceivers = conn.getTransceivers();
     const receivers = conn.getReceivers();
 
-    // Attach lifecycle listeners to all tracks
+    // Attach lifecycle listeners to all tracks so unmute/mute/ended immediately refreshes media
     receivers.forEach(receiver => {
       const track = receiver.track;
       if (track && !(track as any)._hasLifecycleListeners) {
         (track as any)._hasLifecycleListeners = true;
-        track.onunmute = () => syncPeerMedia(peerId, conn);
-        track.onmute = () => syncPeerMedia(peerId, conn);
-        track.onended = () => syncPeerMedia(peerId, conn);
+        track.onunmute = () => syncPeerMedia(peerId, conn, true);
+        track.onmute = () => syncPeerMedia(peerId, conn, true);
+        track.onended = () => syncPeerMedia(peerId, conn, true);
       }
     });
 
-    // 1. Microphone Audio Receiver (first audio transceiver)
-    const audioReceivers = receivers.filter(r => r.track && r.track.kind === 'audio');
+    const associatedAudioTransceivers = transceivers.filter(t =>
+      t.mid !== null && (
+        (t.receiver && t.receiver.track?.kind === 'audio') ||
+        (t.sender && t.sender.track?.kind === 'audio')
+      )
+    );
+    const audioReceivers = associatedAudioTransceivers.length > 0
+      ? associatedAudioTransceivers.map(t => t.receiver)
+      : receivers.filter(r => r.track && r.track.kind === 'audio');
+
+    // 1. Microphone Audio Receiver (first audio transceiver, mid 0)
     const micReceiver = audioReceivers[0];
 
     if (micReceiver && micReceiver.track && micReceiver.track.readyState === 'live') {
       let currentAudioStream = peerAudioStreamsRef.current.get(peerId);
       const currentTrack = currentAudioStream?.getAudioTracks()[0];
 
-      if (!currentAudioStream || currentTrack?.id !== micReceiver.track.id) {
+      if (!currentAudioStream || currentTrack?.id !== micReceiver.track.id || forceRefresh) {
         currentAudioStream = new MediaStream([micReceiver.track]);
         peerAudioStreamsRef.current.set(peerId, currentAudioStream);
       }
@@ -194,15 +204,32 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     // 2. Screen Share Receiver (Video & optional Screen Audio)
-    const videoReceiver = receivers.find(r => r.track && r.track.kind === 'video');
-    // Screen audio is the second audio receiver if sender shared tab/system audio
-    const screenAudioReceiver = audioReceivers.length > 1 ? audioReceivers[1] : null;
+    const associatedVideoTransceivers = transceivers.filter(t =>
+      t.mid !== null && (
+        (t.receiver && t.receiver.track?.kind === 'video') ||
+        (t.sender && t.sender.track?.kind === 'video')
+      )
+    );
+    // Prefer an unmuted live video receiver, otherwise fall back to the first associated video receiver
+    const activeVideoTransceiver =
+      associatedVideoTransceivers.find(t => t.receiver?.track?.readyState === 'live' && !t.receiver.track.muted) ||
+      associatedVideoTransceivers.find(t => t.receiver?.track?.readyState === 'live') ||
+      transceivers.find(t => t.receiver?.track?.kind === 'video' && t.receiver.track.readyState === 'live');
+
+    const videoReceiver = activeVideoTransceiver?.receiver || receivers.find(r => r.track && r.track.kind === 'video');
+
+    // Screen audio is the second audio transceiver (or any unmuted extra audio transceiver)
+    const extraAudioReceivers = audioReceivers.slice(1);
+    const screenAudioReceiver =
+      extraAudioReceivers.find(r => r.track && r.track.readyState === 'live' && !r.track.muted) ||
+      extraAudioReceivers.find(r => r.track && r.track.readyState === 'live') ||
+      null;
 
     // A screen share is considered active ONLY IF:
-    // 1. The peer participant is flagged as sharing screen in signaling (or active 1-on-1 video call)
+    // 1. The peer participant is flagged as sharing screen in signaling
     // 2. The video receiver track exists and is ready
     const participant = voiceParticipantsRef.current.find(p => p.userId === peerId);
-    const isPeerSharing = !!(participant?.isScreenSharing || (activeCallRef.current?.isVideo && activeCallRef.current?.targetUser.id === peerId));
+    const isPeerSharing = !!participant?.isScreenSharing;
     const hasLiveVideoTrack = !!(videoReceiver && videoReceiver.track && videoReceiver.track.readyState === 'live');
 
     if (isPeerSharing && hasLiveVideoTrack) {
@@ -215,7 +242,8 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const existingVideoTrack = existingStream?.getVideoTracks()[0];
       const existingAudioTrack = existingStream?.getAudioTracks()[0];
       const newAudioTrackId = screenAudioReceiver?.track?.id;
-      const hasChanged = !existingStream ||
+      const hasChanged = forceRefresh ||
+        !existingStream ||
         existingVideoTrack?.id !== videoReceiver!.track.id ||
         existingAudioTrack?.id !== newAudioTrackId ||
         existingStream.getVideoTracks().length === 0;
@@ -457,7 +485,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const createPeerConnection = (targetUserId: string, channelId: string): RTCPeerConnection => {
+  const createPeerConnection = (targetUserId: string, channelId: string, isInitiator = true): RTCPeerConnection => {
     if (peerConnections.current.has(targetUserId)) {
       peerConnections.current.get(targetUserId)!.close();
     }
@@ -466,32 +494,39 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
     // 1. Audio Transceiver (Microphone)
+    // Using addTrack sets the WebRTC [[AddTrackMagic]] flag so on the Answerer it associates
+    // with the incoming m=audio(0) offer line instead of creating a duplicate transceiver.
     const micTrack = localStreamRef.current?.getAudioTracks()[0];
     if (micTrack && localStreamRef.current) {
       pc.addTrack(micTrack, localStreamRef.current);
-    } else {
+    } else if (isInitiator) {
       pc.addTransceiver('audio', { direction: 'sendrecv' });
     }
 
-    // 2. Video Transceiver (Screen Share Video)
-    const screenVideoTrack = screenStreamRef.current?.getVideoTracks()[0];
-    if (screenVideoTrack && screenStreamRef.current) {
-      pc.addTrack(screenVideoTrack, screenStreamRef.current);
-    } else {
-      pc.addTransceiver('video', { direction: 'recvonly' });
-    }
+    // IMPORTANT: Only pre-create the Screen Video (slot 1) and Screen Audio (slot 2) transceivers
+    // on the Initiator. On the Answerer (isInitiator = false), pc.setRemoteDescription(offer)
+    // automatically creates the matching video and second audio transceivers associated with mid 1 and mid 2.
+    if (isInitiator) {
+      // 2. Video Transceiver (Screen Share Video)
+      const screenVideoTrack = screenStreamRef.current?.getVideoTracks().find(t => t.readyState === 'live');
+      if (screenVideoTrack && screenStreamRef.current) {
+        pc.addTransceiver(screenVideoTrack, { direction: 'sendrecv', streams: [screenStreamRef.current] });
+      } else {
+        pc.addTransceiver('video', { direction: 'recvonly' });
+      }
 
-    // 3. Screen Audio Transceiver (Tab / System Audio from Screen Share)
-    const screenAudioTrack = screenStreamRef.current?.getAudioTracks()[0];
-    if (screenAudioTrack && screenStreamRef.current) {
-      pc.addTrack(screenAudioTrack, screenStreamRef.current);
-    } else {
-      pc.addTransceiver('audio', { direction: 'recvonly' });
+      // 3. Screen Audio Transceiver (Tab / System Audio from Screen Share)
+      const screenAudioTrack = screenStreamRef.current?.getAudioTracks().find(t => t.readyState === 'live');
+      if (screenAudioTrack && screenStreamRef.current) {
+        pc.addTransceiver(screenAudioTrack, { direction: 'sendrecv', streams: [screenStreamRef.current] });
+      } else {
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+      }
     }
 
     // Handle incoming remote media
     pc.ontrack = () => {
-      syncPeerMedia(targetUserId, pc);
+      syncPeerMedia(targetUserId, pc, true);
     };
 
     // Handle ICE candidates
@@ -623,7 +658,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       data.participants.forEach(async (peer) => {
         if (peer.userId === user?.id) return;
 
-        createPeerConnection(peer.userId, data.channelId);
+        createPeerConnection(peer.userId, data.channelId, true);
         await makeOffer(peer.userId, data.channelId);
       });
     });
@@ -712,7 +747,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       // Immediately sync peer receivers on state change
       const pc = peerConnections.current.get(data.userId);
       if (pc) {
-        syncPeerMedia(data.userId, pc);
+        syncPeerMedia(data.userId, pc, true);
       } else {
         if (!data.isScreenSharing && remoteStreamsRef.current.has(data.userId)) {
           remoteStreamsRef.current.delete(data.userId);
@@ -731,7 +766,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       let pc = peerConnections.current.get(senderUserId);
       if (!pc) {
-        pc = createPeerConnection(senderUserId, channelId);
+        pc = createPeerConnection(senderUserId, channelId, false);
       }
 
       if (signal.type === 'offer') {
@@ -751,29 +786,57 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
           await processPendingCandidates(senderUserId, pc);
 
-          // Configure Transceiver directions before creating Answer
+          // Configure Transceiver directions and attach any active local tracks before creating Answer
           const transceivers = pc.getTransceivers();
-          const videoTransceiver = transceivers.find(t => 
-            (t.receiver && t.receiver.track?.kind === 'video') || 
+          const videoTransceiver = transceivers.find(t =>
+            t.mid !== null && (
+              (t.receiver && t.receiver.track?.kind === 'video') ||
+              (t.sender && t.sender.track?.kind === 'video')
+            )
+          ) || transceivers.find(t =>
+            (t.receiver && t.receiver.track?.kind === 'video') ||
             (t.sender && t.sender.track?.kind === 'video')
           );
+
           if (videoTransceiver) {
-            const hasLocalVideo = !!(screenStreamRef.current && screenStreamRef.current.getVideoTracks().some(t => t.readyState === 'live'));
-            videoTransceiver.direction = hasLocalVideo ? 'sendrecv' : 'recvonly';
+            const localVideoTrack = screenStreamRef.current?.getVideoTracks().find(t => t.readyState === 'live') || null;
+            if (localVideoTrack && screenStreamRef.current) {
+              if ('setStreams' in videoTransceiver.sender) {
+                try { (videoTransceiver.sender as any).setStreams(screenStreamRef.current); } catch {}
+              }
+              await videoTransceiver.sender.replaceTrack(localVideoTrack).catch(() => {});
+              videoTransceiver.direction = 'sendrecv';
+            } else {
+              videoTransceiver.direction = 'recvonly';
+            }
           }
 
-          const audioTransceivers = transceivers.filter(t => 
-            (t.receiver && t.receiver.track?.kind === 'audio') || 
-            (t.sender && t.sender.track?.kind === 'audio')
+          const audioTransceivers = transceivers.filter(t =>
+            t.mid !== null && (
+              (t.receiver && t.receiver.track?.kind === 'audio') ||
+              (t.sender && t.sender.track?.kind === 'audio')
+            )
           );
           // First audio transceiver is microphone
           if (audioTransceivers[0]) {
+            const localMicTrack = localStreamRef.current?.getAudioTracks().find(t => t.readyState === 'live') || null;
+            if (localMicTrack && audioTransceivers[0].sender.track !== localMicTrack) {
+              await audioTransceivers[0].sender.replaceTrack(localMicTrack).catch(() => {});
+            }
             audioTransceivers[0].direction = 'sendrecv';
           }
           // Second audio transceiver is screen share audio
           if (audioTransceivers[1]) {
-            const hasLocalScreenAudio = !!(screenStreamRef.current && screenStreamRef.current.getAudioTracks().some(t => t.readyState === 'live'));
-            audioTransceivers[1].direction = hasLocalScreenAudio ? 'sendrecv' : 'recvonly';
+            const localScreenAudioTrack = screenStreamRef.current?.getAudioTracks().find(t => t.readyState === 'live') || null;
+            if (localScreenAudioTrack && screenStreamRef.current) {
+              if ('setStreams' in audioTransceivers[1].sender) {
+                try { (audioTransceivers[1].sender as any).setStreams(screenStreamRef.current); } catch {}
+              }
+              await audioTransceivers[1].sender.replaceTrack(localScreenAudioTrack).catch(() => {});
+              audioTransceivers[1].direction = 'sendrecv';
+            } else {
+              audioTransceivers[1].direction = 'recvonly';
+            }
           }
 
           const answer = await pc.createAnswer();
@@ -786,7 +849,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
 
           // Sync tracks received immediately after remote description set
-          syncPeerMedia(senderUserId, pc);
+          syncPeerMedia(senderUserId, pc, true);
         } catch (e) {
           console.error('[WebRTC] Error handling offer:', e);
         }
@@ -800,7 +863,7 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           await processPendingCandidates(senderUserId, pc);
 
           // Sync tracks confirmed by answer
-          syncPeerMedia(senderUserId, pc);
+          syncPeerMedia(senderUserId, pc, true);
         } catch (e) {
           console.error('[WebRTC] Error handling answer:', e);
         }
@@ -946,29 +1009,31 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const stopScreenShare = async () => {
-    // 1. Reset transceivers to recvonly and replaceTrack(null)
+    // 1. Reset associated video and screen-audio transceivers to recvonly and replaceTrack(null)
     for (const pc of peerConnections.current.values()) {
       const transceivers = pc.getTransceivers();
-      const videoTransceiver = transceivers.find(t => 
-        (t.sender && t.sender.track?.kind === 'video') || 
+      const videoTransceivers = transceivers.filter(t =>
+        (t.sender && t.sender.track?.kind === 'video') ||
         (t.receiver && t.receiver.track?.kind === 'video')
       );
-      if (videoTransceiver) {
+      for (const vt of videoTransceivers) {
         try {
-          videoTransceiver.direction = 'recvonly';
-          await videoTransceiver.sender.replaceTrack(null).catch(() => {});
+          vt.direction = 'recvonly';
+          await vt.sender.replaceTrack(null).catch(() => {});
         } catch (e) {}
       }
 
-      const audioTransceivers = transceivers.filter(t => 
-        (t.sender && t.sender.track?.kind === 'audio') || 
-        (t.receiver && t.receiver.track?.kind === 'audio')
+      const audioTransceivers = transceivers.filter(t =>
+        t.mid !== null && (
+          (t.sender && t.sender.track?.kind === 'audio') ||
+          (t.receiver && t.receiver.track?.kind === 'audio')
+        )
       );
-      // Screen audio is the second transceiver
-      if (audioTransceivers[1]) {
+      // Screen audio is the second transceiver (index 1+)
+      for (let i = 1; i < audioTransceivers.length; i++) {
         try {
-          audioTransceivers[1].direction = 'recvonly';
-          await audioTransceivers[1].sender.replaceTrack(null).catch(() => {});
+          audioTransceivers[i].direction = 'recvonly';
+          await audioTransceivers[i].sender.replaceTrack(null).catch(() => {});
         } catch (e) {}
       }
     }
@@ -1016,8 +1081,13 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               width: { ideal: 1920 },
               height: { ideal: 1080 }
             },
-            audio: true
-          });
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false
+            } as any,
+            systemAudio: 'include'
+          } as any);
         } catch (mediaErr: any) {
           if (mediaErr.name === 'NotAllowedError') throw mediaErr;
           stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
@@ -1030,47 +1100,68 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const videoTrack = stream.getVideoTracks()[0];
         const screenAudioTrack = stream.getAudioTracks()[0];
 
-        // Attach tracks to all peer connections
+        // Attach tracks to all peer connections on the associated transceivers
         for (const pc of peerConnections.current.values()) {
           const transceivers = pc.getTransceivers();
 
-          // Video transceiver
-          let videoTransceiver = transceivers.find(t => 
-            (t.sender && t.sender.track?.kind === 'video') || 
+          // Find the negotiated (associated) video transceiver first
+          let videoTransceiver = transceivers.find(t =>
+            t.mid !== null && (
+              (t.sender && t.sender.track?.kind === 'video') ||
+              (t.receiver && t.receiver.track?.kind === 'video')
+            )
+          ) || transceivers.find(t =>
+            (t.sender && t.sender.track?.kind === 'video') ||
             (t.receiver && t.receiver.track?.kind === 'video')
           );
+
           if (!videoTransceiver) {
-            videoTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
+            if (videoTrack) {
+              videoTransceiver = pc.addTransceiver(videoTrack, { direction: 'sendrecv', streams: [stream] });
+            } else {
+              videoTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
+            }
           } else {
             videoTransceiver.direction = 'sendrecv';
-          }
-          if (videoTrack) {
-            if ('setStreams' in videoTransceiver.sender) {
-              try {
-                (videoTransceiver.sender as any).setStreams(stream);
-              } catch (e) {}
+            if (videoTrack) {
+              if ('setStreams' in videoTransceiver.sender) {
+                try {
+                  (videoTransceiver.sender as any).setStreams(stream);
+                } catch (e) {}
+              }
+              await videoTransceiver.sender.replaceTrack(videoTrack).catch(() => {});
             }
-            await videoTransceiver.sender.replaceTrack(videoTrack).catch(() => {});
           }
 
-          // Screen audio transceiver
-          const audioTransceivers = transceivers.filter(t => 
-            (t.sender && t.sender.track?.kind === 'audio') || 
-            (t.receiver && t.receiver.track?.kind === 'audio')
+          // Find the negotiated (associated) audio transceivers
+          const audioTransceivers = transceivers.filter(t =>
+            t.mid !== null && (
+              (t.sender && t.sender.track?.kind === 'audio') ||
+              (t.receiver && t.receiver.track?.kind === 'audio')
+            )
           );
           let screenAudioTransceiver = audioTransceivers[1];
           if (!screenAudioTransceiver) {
-            screenAudioTransceiver = pc.addTransceiver('audio', { direction: screenAudioTrack ? 'sendrecv' : 'recvonly' });
+            if (screenAudioTrack) {
+              screenAudioTransceiver = pc.addTransceiver(screenAudioTrack, {
+                direction: 'sendrecv',
+                streams: [stream]
+              });
+            } else {
+              screenAudioTransceiver = pc.addTransceiver('audio', { direction: 'recvonly' });
+            }
           } else {
             screenAudioTransceiver.direction = screenAudioTrack ? 'sendrecv' : 'recvonly';
-          }
-          if (screenAudioTrack) {
-            if ('setStreams' in screenAudioTransceiver.sender) {
-              try {
-                (screenAudioTransceiver.sender as any).setStreams(stream);
-              } catch (e) {}
+            if (screenAudioTrack) {
+              if ('setStreams' in screenAudioTransceiver.sender) {
+                try {
+                  (screenAudioTransceiver.sender as any).setStreams(stream);
+                } catch (e) {}
+              }
+              await screenAudioTransceiver.sender.replaceTrack(screenAudioTrack).catch(() => {});
+            } else {
+              await screenAudioTransceiver.sender.replaceTrack(null).catch(() => {});
             }
-            await screenAudioTransceiver.sender.replaceTrack(screenAudioTrack).catch(() => {});
           }
         }
 

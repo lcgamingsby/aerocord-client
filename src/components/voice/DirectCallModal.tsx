@@ -63,7 +63,7 @@ export const DirectCallModal: React.FC = () => {
   if (activeCall) {
     const targetUserId = activeCall.targetUser.id;
     const targetParticipant = voiceParticipants.find(p => p.userId === targetUserId);
-    if (targetParticipant?.isScreenSharing || activeCall.isVideo) {
+    if (targetParticipant?.isScreenSharing) {
       const stream = remoteStreams.get(targetUserId);
       if (stream && stream.getVideoTracks().some(t => t.readyState === 'live')) {
         remoteScreenStream = stream;

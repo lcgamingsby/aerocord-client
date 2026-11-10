@@ -9,68 +9,171 @@ export const VideoSharePlayer: React.FC<{
   className?: string;
   isLocal?: boolean;
 }> = ({ stream, className, isLocal = false }) => {
+  const { isDeafened } = useVoice();
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const webAudioRef = useRef<{ ctx: AudioContext; gain: GainNode; source: MediaStreamAudioSourceNode } | null>(null);
   const [isAudioMuted, setIsAudioMuted] = useState<boolean>(isLocal);
   const [audioVolume, setAudioVolume] = useState<number>(100);
   const hasAudioTrack = stream.getAudioTracks().some(t => t.readyState === 'live');
 
+  // 1. Video playback effect (always muted on <video> element so browser autoplay NEVER blocks video frames)
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
 
-    if (videoEl.srcObject !== stream) {
-      videoEl.srcObject = stream;
+    const attachAndPlayVideo = () => {
+      if (!videoEl) return;
+      const videoTracks = stream.getVideoTracks().filter(t => t.readyState === 'live');
+      if (videoTracks.length === 0) return;
+
+      const currentSrc = videoEl.srcObject as MediaStream | null;
+      const currentVidTrack = currentSrc?.getVideoTracks()[0];
+      if (!currentSrc || currentVidTrack?.id !== videoTracks[0].id || videoEl.videoWidth === 0) {
+        videoEl.srcObject = new MediaStream([videoTracks[0]]);
+      }
+
+      videoEl.muted = true;
+      videoEl.play().catch(err => {
+        console.warn('Video playback notice:', err);
+      });
+    };
+
+    attachAndPlayVideo();
+
+    const videoTracks = stream.getVideoTracks();
+    const handleUnmute = () => {
+      if (!videoEl) return;
+      const liveVid = stream.getVideoTracks().find(t => t.readyState === 'live');
+      if (liveVid) {
+        videoEl.srcObject = new MediaStream([liveVid]);
+        videoEl.muted = true;
+        videoEl.play().catch(() => {});
+      }
+    };
+
+    videoTracks.forEach(t => {
+      t.addEventListener('unmute', handleUnmute);
+    });
+
+    videoEl.addEventListener('canplay', attachAndPlayVideo);
+    videoEl.addEventListener('loadedmetadata', attachAndPlayVideo);
+
+    const interval = setInterval(() => {
+      if (!videoEl) return;
+      const liveVid = stream.getVideoTracks().find(t => t.readyState === 'live');
+      if (liveVid && (videoEl.paused || (videoEl.videoWidth === 0 && !liveVid.muted))) {
+        videoEl.srcObject = new MediaStream([liveVid]);
+        videoEl.muted = true;
+        videoEl.play().catch(() => {});
+      }
+    }, 800);
+
+    return () => {
+      clearInterval(interval);
+      videoTracks.forEach(t => {
+        t.removeEventListener('unmute', handleUnmute);
+      });
+      videoEl.removeEventListener('canplay', attachAndPlayVideo);
+      videoEl.removeEventListener('loadedmetadata', attachAndPlayVideo);
+    };
+  }, [stream]);
+
+  // 2. Screen Share Audio playback effect (separated from <video> so audio never stalls video or gets blocked)
+  useEffect(() => {
+    if (isLocal) return;
+
+    const audioEl = audioRef.current;
+    const audioTracks = stream.getAudioTracks().filter(t => t.readyState === 'live');
+
+    if (audioTracks.length === 0) {
+      if (audioEl) {
+        audioEl.pause();
+        audioEl.srcObject = null;
+      }
+      if (webAudioRef.current) {
+        webAudioRef.current.ctx.close().catch(() => {});
+        webAudioRef.current = null;
+      }
+      return;
     }
 
-    // Set muted status: always mute local to prevent echo, allow unmuted for remote
-    videoEl.muted = isLocal ? true : isAudioMuted;
-    videoEl.volume = isLocal ? 0 : Math.max(0, Math.min(1, audioVolume / 100));
+    const effectiveVolume = (isAudioMuted || isDeafened) ? 0 : Math.max(0, Math.min(1, audioVolume / 100));
+    const audioOnlyStream = new MediaStream([audioTracks[0]]);
 
-    const tryPlay = () => {
-      if (videoEl && videoEl.paused) {
-        videoEl.play().catch(err => {
-          console.warn('Video playback notice:', err);
-          if (err.name === 'NotAllowedError' && !videoEl.muted) {
-            // Autoplay policy blocked unmuted playback, mute temporarily to display the video feed
-            videoEl.muted = true;
-            setIsAudioMuted(true);
-            videoEl.play().catch(() => {});
+    const startWebAudioFallback = () => {
+      try {
+        if (!webAudioRef.current) {
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          const ctx: AudioContext = new AudioCtx();
+          const source = ctx.createMediaStreamSource(audioOnlyStream);
+          const gain = ctx.createGain();
+          gain.gain.value = effectiveVolume;
+          source.connect(gain);
+          gain.connect(ctx.destination);
+          webAudioRef.current = { ctx, gain, source };
+        } else {
+          webAudioRef.current.gain.gain.value = effectiveVolume;
+          if (webAudioRef.current.ctx.state === 'suspended') {
+            webAudioRef.current.ctx.resume().catch(() => {});
           }
+        }
+      } catch (e) {
+        console.warn('WebAudio screen audio fallback notice:', e);
+      }
+    };
+
+    const syncAudioPlayback = () => {
+      if (!audioEl) return;
+      const currentSrc = audioEl.srcObject as MediaStream | null;
+      if (!currentSrc || currentSrc.getAudioTracks()[0]?.id !== audioTracks[0].id) {
+        audioEl.srcObject = audioOnlyStream;
+      }
+      audioEl.muted = isAudioMuted || isDeafened;
+      audioEl.volume = effectiveVolume;
+
+      if (webAudioRef.current) {
+        webAudioRef.current.gain.gain.value = effectiveVolume;
+      }
+
+      if (audioEl.paused && !isAudioMuted && !isDeafened) {
+        audioEl.play().catch(() => {
+          // If HTMLAudioElement is blocked by autoplay policy, use WebAudio fallback
+          startWebAudioFallback();
         });
       }
     };
 
-    tryPlay();
+    syncAudioPlayback();
 
-    const tracks = stream.getTracks();
-    tracks.forEach(t => {
-      t.addEventListener('unmute', tryPlay);
-    });
+    const handleAudioUnmute = () => syncAudioPlayback();
+    audioTracks.forEach(t => t.addEventListener('unmute', handleAudioUnmute));
 
-    videoEl.addEventListener('canplay', tryPlay);
-    videoEl.addEventListener('loadedmetadata', tryPlay);
-
-    const interval = setInterval(() => {
-      if (videoEl && videoEl.paused && stream.getVideoTracks().some(t => t.readyState === 'live')) {
-        tryPlay();
+    const onUserGesture = () => {
+      syncAudioPlayback();
+      if (webAudioRef.current && webAudioRef.current.ctx.state === 'suspended') {
+        webAudioRef.current.ctx.resume().catch(() => {});
       }
-    }, 1000);
-
-    const onUserGesture = () => tryPlay();
+    };
     window.addEventListener('click', onUserGesture, { passive: true });
     window.addEventListener('touchstart', onUserGesture, { passive: true });
 
     return () => {
-      clearInterval(interval);
-      tracks.forEach(t => {
-        t.removeEventListener('unmute', tryPlay);
-      });
-      videoEl.removeEventListener('canplay', tryPlay);
-      videoEl.removeEventListener('loadedmetadata', tryPlay);
+      audioTracks.forEach(t => t.removeEventListener('unmute', handleAudioUnmute));
       window.removeEventListener('click', onUserGesture);
       window.removeEventListener('touchstart', onUserGesture);
     };
-  }, [stream, isLocal, isAudioMuted, audioVolume]);
+  }, [stream, isLocal, isAudioMuted, audioVolume, isDeafened]);
+
+  // Cleanup WebAudio on unmount
+  useEffect(() => {
+    return () => {
+      if (webAudioRef.current) {
+        webAudioRef.current.ctx.close().catch(() => {});
+        webAudioRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="relative w-full h-full flex items-center justify-center group/player">
@@ -78,15 +181,23 @@ export const VideoSharePlayer: React.FC<{
         ref={videoRef}
         autoPlay
         playsInline
-        muted={isLocal ? true : isAudioMuted}
+        muted={true}
         className={className}
         onLoadedMetadata={(e) => {
-          e.currentTarget.play().catch(err => console.warn('Video onLoadedMetadata notice:', err));
+          e.currentTarget.play().catch(() => {});
         }}
         onCanPlay={(e) => {
-          e.currentTarget.play().catch(err => console.warn('Video onCanPlay notice:', err));
+          e.currentTarget.play().catch(() => {});
         }}
       />
+      {!isLocal && (
+        <audio
+          ref={audioRef}
+          autoPlay
+          playsInline
+          style={{ display: 'none' }}
+        />
+      )}
 
       {/* Audio controls overlay for remote screen share */}
       {!isLocal && hasAudioTrack && (
