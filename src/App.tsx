@@ -138,7 +138,7 @@ const MainLayout: React.FC = () => {
   }, [token]);
 
   // Fetch active server details
-  const fetchActiveServerDetails = useCallback(async (srvId: string) => {
+  const fetchActiveServerDetails = useCallback(async (srvId: string, preserveActiveChannel = false) => {
     if (!token) return;
     try {
       const res = await fetch(apiUrl(`/api/servers/${srvId}`), {
@@ -148,11 +148,19 @@ const MainLayout: React.FC = () => {
         const data = await res.json();
         if (data.server) {
           setActiveServer(data.server);
-          const firstText = data.server.channels?.find((c: Channel) => c.type === 'text') || data.server.channels?.[0];
-          if (firstText) {
-            setActiveChannel(firstText);
-            setActiveChannelId(firstText.id);
-          }
+          setActiveChannel(prevChannel => {
+            if (preserveActiveChannel && prevChannel) {
+              const existing = data.server.channels?.find((c: Channel) => c.id === prevChannel.id);
+              if (existing) {
+                return existing;
+              }
+            }
+            const firstText = data.server.channels?.find((c: Channel) => c.type === 'text') || data.server.channels?.[0] || null;
+            if (firstText) {
+              setActiveChannelId(firstText.id);
+            }
+            return firstText;
+          });
           return;
         }
       }
@@ -175,7 +183,7 @@ const MainLayout: React.FC = () => {
 
   useEffect(() => {
     if (activeServerId) {
-      fetchActiveServerDetails(activeServerId);
+      fetchActiveServerDetails(activeServerId, false);
       setActiveConversation(null);
     } else {
       setActiveServer(null);
@@ -184,13 +192,13 @@ const MainLayout: React.FC = () => {
     }
   }, [activeServerId, fetchActiveServerDetails, setActiveChannelId]);
 
-  // Auto toast notification for incoming private messages and track unread DMs per conversation
+  // Real-time listeners for messages, DM updates, server changes, and user presence/profile changes
   useEffect(() => {
     if (!socket || !user) return;
 
     const handleIncomingMessage = (msg: Message) => {
       if (msg.authorId !== user.id) {
-        if (msg.channelId.startsWith('dm_')) {
+        if (msg.channelId.startsWith('dm_') || msg.channelId.startsWith('group_dm_')) {
           if (msg.channelId !== activeConversation?.id) {
             setUnreadDMs(prev => ({
               ...prev,
@@ -202,15 +210,105 @@ const MainLayout: React.FC = () => {
             );
           }
         }
-        fetchConversations();
+      }
+      fetchConversations();
+    };
+
+    const handleDMUpdated = () => {
+      fetchConversations();
+    };
+
+    const handleServerUpdated = (data?: { serverId?: string }) => {
+      fetchServers();
+      if (activeServerId && (!data?.serverId || data.serverId === activeServerId)) {
+        fetchActiveServerDetails(activeServerId, true);
       }
     };
 
+    const handleServerDeleted = (data: { serverId: string }) => {
+      fetchServers();
+      if (activeServerId === data?.serverId) {
+        setActiveServerId(null);
+      }
+    };
+
+    const handlePresenceChange = (data: { userId: string; status: User['status']; customStatus?: string }) => {
+      setConversations(prev =>
+        prev.map(convo => ({
+          ...convo,
+          recipients: convo.recipients?.map(r =>
+            r.id === data.userId
+              ? { ...r, status: data.status, customStatus: data.customStatus ?? r.customStatus }
+              : r
+          )
+        }))
+      );
+      setActiveConversation(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          recipients: prev.recipients?.map(r =>
+            r.id === data.userId
+              ? { ...r, status: data.status, customStatus: data.customStatus ?? r.customStatus }
+              : r
+          )
+        };
+      });
+      setActiveServer(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          members: prev.members.map(m =>
+            m.userId === data.userId && m.user
+              ? { ...m, user: { ...m.user, status: data.status, customStatus: data.customStatus ?? m.user.customStatus } }
+              : m
+          )
+        };
+      });
+    };
+
+    const handleUserUpdated = (updatedUser: User) => {
+      if (!updatedUser?.id) return;
+      setConversations(prev =>
+        prev.map(convo => ({
+          ...convo,
+          recipients: convo.recipients?.map(r => (r.id === updatedUser.id ? { ...r, ...updatedUser } : r))
+        }))
+      );
+      setActiveConversation(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          recipients: prev.recipients?.map(r => (r.id === updatedUser.id ? { ...r, ...updatedUser } : r))
+        };
+      });
+      setActiveServer(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          members: prev.members.map(m =>
+            m.userId === updatedUser.id && m.user ? { ...m, user: { ...m.user, ...updatedUser } } : m
+          )
+        };
+      });
+    };
+
     socket.on('new_message', handleIncomingMessage);
+    socket.on('dm_conversation_updated', handleDMUpdated);
+    socket.on('server_updated', handleServerUpdated);
+    socket.on('server_deleted', handleServerDeleted);
+    socket.on('user_presence_change', handlePresenceChange);
+    socket.on('user_updated', handleUserUpdated);
+
     return () => {
       socket.off('new_message', handleIncomingMessage);
+      socket.off('dm_conversation_updated', handleDMUpdated);
+      socket.off('server_updated', handleServerUpdated);
+      socket.off('server_deleted', handleServerDeleted);
+      socket.off('user_presence_change', handlePresenceChange);
+      socket.off('user_updated', handleUserUpdated);
     };
-  }, [socket, user, activeConversation, showInfo, fetchConversations]);
+  }, [socket, user, activeConversation?.id, activeServerId, showInfo, fetchConversations, fetchServers, fetchActiveServerDetails]);
 
   // Handler for creating DM with a user
   const handleCreateDMWithUser = async (targetUserId: string) => {

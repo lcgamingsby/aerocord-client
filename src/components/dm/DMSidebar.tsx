@@ -28,6 +28,7 @@ export const DMSidebar: React.FC<DMSidebarProps> = ({
   onToggleCollapse
 }) => {
   const { user, friends } = useAuth();
+  const { onlineUsers } = useSocket();
   const pendingCount = friends.filter(f => f.status === 'pending' && !f.isSender).length;
   const [sidebarWidth, setSidebarWidth] = useState<number>(260);
   const [isResizing, setIsResizing] = useState<boolean>(false);
@@ -131,6 +132,7 @@ export const DMSidebar: React.FC<DMSidebarProps> = ({
 
         {conversations.map(convo => {
           const recipient = convo.recipients?.find(r => r.id !== user?.id) || convo.recipients?.[0];
+          const recipientStatus = (recipient && onlineUsers.get(recipient.id)?.status) || recipient?.status || 'offline';
           const isActive = activeConversationId === convo.id;
           const unread = unreadDMs[convo.id] || 0;
           const name = convo.name || recipient?.username || 'Direct Message';
@@ -150,7 +152,13 @@ export const DMSidebar: React.FC<DMSidebarProps> = ({
                 <img src={avatar} alt={name} className="w-8 h-8 rounded-xl object-cover" />
                 <div
                   className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#11131a] ${
-                    recipient?.status === 'online' ? 'bg-emerald-500' : 'bg-slate-500'
+                    recipientStatus === 'online'
+                      ? 'bg-emerald-500'
+                      : recipientStatus === 'idle'
+                      ? 'bg-amber-500'
+                      : recipientStatus === 'dnd'
+                      ? 'bg-rose-500'
+                      : 'bg-slate-500'
                   }`}
                 />
               </div>

@@ -219,31 +219,41 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </button>
           )}
 
-          {conversation && recipientUser ? (
-            <div className="flex items-center space-x-2.5 min-w-0">
-              <div className="relative flex-shrink-0">
-                <img
-                  src={recipientUser.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${recipientUser.id}`}
-                  alt={recipientUser.username}
-                  className="w-8 h-8 rounded-xl object-cover border border-white/10"
-                />
-                <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#11131a] ${
-                  onlineUsers.get(recipientUser.id)?.status === 'online' ? 'bg-emerald-500' : 'bg-slate-500'
-                }`} />
+          {conversation && recipientUser ? (() => {
+            const recipientStatus = onlineUsers.get(recipientUser.id)?.status || recipientUser.status || 'offline';
+            const isRecipientOnline = recipientStatus === 'online' || recipientStatus === 'idle' || recipientStatus === 'dnd';
+            return (
+              <div className="flex items-center space-x-2.5 min-w-0">
+                <div className="relative flex-shrink-0">
+                  <img
+                    src={recipientUser.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${recipientUser.id}`}
+                    alt={recipientUser.username}
+                    className="w-8 h-8 rounded-xl object-cover border border-white/10"
+                  />
+                  <div className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#11131a] ${
+                    recipientStatus === 'online'
+                      ? 'bg-emerald-500'
+                      : recipientStatus === 'idle'
+                      ? 'bg-amber-500'
+                      : recipientStatus === 'dnd'
+                      ? 'bg-rose-500'
+                      : 'bg-slate-500'
+                  }`} />
+                </div>
+                {/* Account Name & Status: Hidden on narrow mobile devices for clean minimal top bar */}
+                <div className="hidden sm:flex items-center space-x-2 min-w-0">
+                  <span className="font-bold text-sm text-slate-100 truncate">{displayName.replace(/^@/, '')}</span>
+                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0 ${
+                    isRecipientOnline
+                      ? 'text-emerald-400 bg-emerald-500/10'
+                      : 'text-slate-400 bg-white/5'
+                  }`}>
+                    {recipientStatus === 'online' ? 'Online' : recipientStatus === 'idle' ? 'Idle' : recipientStatus === 'dnd' ? 'DND' : 'Offline'}
+                  </span>
+                </div>
               </div>
-              {/* Account Name & Status: Hidden on narrow mobile devices for clean minimal top bar */}
-              <div className="hidden sm:flex items-center space-x-2 min-w-0">
-                <span className="font-bold text-sm text-slate-100 truncate">{displayName.replace(/^@/, '')}</span>
-                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0 ${
-                  onlineUsers.get(recipientUser.id)?.status === 'online'
-                    ? 'text-emerald-400 bg-emerald-500/10'
-                    : 'text-slate-400 bg-white/5'
-                }`}>
-                  {onlineUsers.get(recipientUser.id)?.status === 'online' ? 'Online' : 'Offline'}
-                </span>
-              </div>
-            </div>
-          ) : (
+            );
+          })() : (
             <div className="flex items-center space-x-2.5 min-w-0">
               <div className={`p-2 rounded-xl flex-shrink-0 ${channel?.type === 'voice' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-indigo-500/10 text-indigo-400'}`}>
                 {channel?.type === 'voice' ? (

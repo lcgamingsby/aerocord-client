@@ -58,15 +58,7 @@ export const DirectCallModal: React.FC = () => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isScreenShareExpanded]);
 
-  if (!incomingCall && !activeCall) return null;
-
-  const formatTime = (sec: number) => {
-    const m = Math.floor(sec / 60).toString().padStart(2, '0');
-    const s = (sec % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
-  };
-
-  // Detect remote screen share stream
+  // Detect remote screen share stream (must be before early returns so useEffect below adheres to Rules of Hooks)
   let remoteScreenStream: MediaStream | null = null;
   if (activeCall) {
     const targetUserId = activeCall.targetUser.id;
@@ -78,6 +70,22 @@ export const DirectCallModal: React.FC = () => {
       }
     }
   }
+
+  const hasScreenShare = !!remoteScreenStream || (isScreenSharing && !!screenStream && screenStream.getVideoTracks().some(t => t.readyState === 'live'));
+
+  useEffect(() => {
+    if (isScreenShareExpanded && !hasScreenShare) {
+      setIsScreenShareExpanded(false);
+    }
+  }, [hasScreenShare, isScreenShareExpanded]);
+
+  if (!incomingCall && !activeCall) return null;
+
+  const formatTime = (sec: number) => {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = (sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
   // 1. Incoming Call Windowed Popup
   if (incomingCall) {
@@ -134,14 +142,6 @@ export const DirectCallModal: React.FC = () => {
   }
 
   // 3. Active Connected Call
-  const hasScreenShare = !!remoteScreenStream || (isScreenSharing && !!screenStream && screenStream.getVideoTracks().some(t => t.readyState === 'live'));
-
-  useEffect(() => {
-    if (isScreenShareExpanded && !hasScreenShare) {
-      setIsScreenShareExpanded(false);
-    }
-  }, [hasScreenShare, isScreenShareExpanded]);
-
   if (activeCall && activeCall.status === 'connected') {
     const target = activeCall.targetUser;
 

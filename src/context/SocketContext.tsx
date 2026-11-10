@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 import { Message, UserStatus } from '../types';
 import { soundEffects } from '../utils/soundEffects';
 import { SOCKET_URL } from '../config/api';
@@ -28,7 +29,8 @@ interface SocketContextType {
 const SocketContext = createContext<SocketContextType | undefined>(undefined);
 
 export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { token, user } = useAuth();
+  const { token, user, refreshFriends } = useAuth();
+  const { showInfo, showSuccess } = useToast();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
@@ -36,9 +38,23 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [onlineUsers, setOnlineUsers] = useState<Map<string, { status: UserStatus; customStatus?: string }>>(new Map());
 
   const typingTimeouts = useRef<{ [key: string]: number }>({});
+  const activeChannelIdRef = useRef<string | null>(null);
+  const refreshFriendsRef = useRef(refreshFriends);
+  const showInfoRef = useRef(showInfo);
+  const showSuccessRef = useRef(showSuccess);
 
   useEffect(() => {
-    if (!token || !user) {
+    activeChannelIdRef.current = activeChannelId;
+  }, [activeChannelId]);
+
+  useEffect(() => {
+    refreshFriendsRef.current = refreshFriends;
+    showInfoRef.current = showInfo;
+    showSuccessRef.current = showSuccess;
+  }, [refreshFriends, showInfo, showSuccess]);
+
+  useEffect(() => {
+    if (!token || !user?.id) {
       if (socket) {
         socket.disconnect();
         setSocket(null);
@@ -53,13 +69,25 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     s.on('connect', () => {
       setIsConnected(true);
-      if (activeChannelId) {
-        s.emit('join_channel', activeChannelId);
+      if (activeChannelIdRef.current) {
+        s.emit('join_channel', activeChannelIdRef.current);
       }
+      refreshFriendsRef.current();
     });
 
     s.on('disconnect', () => {
       setIsConnected(false);
+    });
+
+    s.on('initial_presence', (list: Array<{ userId: string; status: UserStatus; customStatus?: string }>) => {
+      if (!Array.isArray(list)) return;
+      setOnlineUsers(prev => {
+        const next = new Map(prev);
+        list.forEach(item => {
+          next.set(item.userId, { status: item.status, customStatus: item.customStatus });
+        });
+        return next;
+      });
     });
 
     s.on('user_presence_change', (data: { userId: string; status: UserStatus; customStatus?: string }) => {
@@ -68,6 +96,31 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         next.set(data.userId, { status: data.status, customStatus: data.customStatus });
         return next;
       });
+      refreshFriendsRef.current();
+    });
+
+    s.on('friend_request_received', (data: { relationId: string; from?: { username?: string } }) => {
+      refreshFriendsRef.current();
+      soundEffects.playMessagePop();
+      showInfoRef.current(
+        '👋 Permintaan Pertemanan Baru',
+        `${data?.from?.username || 'Seseorang'} mengirim permintaan pertemanan kepada Anda.`
+      );
+    });
+
+    s.on('friend_request_responded', (data: { relationId: string; action: string; byUser?: { username?: string } }) => {
+      refreshFriendsRef.current();
+      if (data?.action === 'accept') {
+        soundEffects.playMessagePop();
+        showSuccessRef.current(
+          '🎉 Pertemanan Diterima',
+          `${data?.byUser?.username || 'Teman'} telah menerima permintaan pertemanan Anda!`
+        );
+      }
+    });
+
+    s.on('friends_updated', () => {
+      refreshFriendsRef.current();
     });
 
     s.on('user_typing', (data: { channelId: string; user: { id: string; username: string } }) => {
@@ -109,7 +162,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => {
       s.disconnect();
     };
-  }, [token, user]);
+  }, [token, user?.id]);
 
   // Handle active channel room joining
   useEffect(() => {

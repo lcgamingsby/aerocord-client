@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import { useToast } from '../../context/ToastContext';
 import { User } from '../../types';
 import { Users, MessageSquare, Phone, Check, X, UserPlus, Search, Sparkles, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
@@ -20,6 +21,7 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({
   onToggleSidebar
 }) => {
   const { user, friends, refreshFriends, sendFriendRequest, respondFriendRequest } = useAuth();
+  const { onlineUsers } = useSocket();
   const { showSuccess, showError, showInfo } = useToast();
 
   const [activeTab, setActiveTab] = useState<TabType>('online');
@@ -52,9 +54,24 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({
     }
   };
 
-  const pendingRequests = friends.filter(f => f.status === 'pending');
-  const acceptedFriends = friends.filter(f => f.status === 'accepted');
-  const onlineFriends = acceptedFriends.filter(f => f.friend.status === 'online' || f.friend.status === 'idle');
+  const liveFriends = useMemo(() => {
+    return friends.map(f => {
+      const presence = onlineUsers.get(f.friend.id);
+      if (!presence) return f;
+      return {
+        ...f,
+        friend: {
+          ...f.friend,
+          status: presence.status,
+          customStatus: presence.customStatus !== undefined ? presence.customStatus : f.friend.customStatus
+        }
+      };
+    });
+  }, [friends, onlineUsers]);
+
+  const pendingRequests = liveFriends.filter(f => f.status === 'pending');
+  const acceptedFriends = liveFriends.filter(f => f.status === 'accepted');
+  const onlineFriends = acceptedFriends.filter(f => f.friend.status === 'online' || f.friend.status === 'idle' || f.friend.status === 'dnd');
 
   const displayedFriends = activeTab === 'online'
     ? onlineFriends
@@ -315,7 +332,13 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({
                         />
                         <div
                           className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#0d0f14] ${
-                            f.friend.status === 'online' ? 'bg-emerald-500' : 'bg-amber-500'
+                            f.friend.status === 'online'
+                              ? 'bg-emerald-500'
+                              : f.friend.status === 'idle'
+                              ? 'bg-amber-500'
+                              : f.friend.status === 'dnd'
+                              ? 'bg-rose-500'
+                              : 'bg-slate-500'
                           }`}
                         />
                       </div>
@@ -325,7 +348,15 @@ export const FriendsHubView: React.FC<FriendsHubViewProps> = ({
                           <span className="text-slate-400 text-[10px]">#{f.friend.discriminator}</span>
                         </div>
                         <span className="text-[10px] text-slate-400">
-                          {f.friend.customStatus || (f.friend.status === 'online' ? 'Online' : 'Idle')}
+                          {f.friend.customStatus || (
+                            f.friend.status === 'online'
+                              ? 'Online'
+                              : f.friend.status === 'idle'
+                              ? 'Idle'
+                              : f.friend.status === 'dnd'
+                              ? 'Jangan Ganggu'
+                              : 'Offline'
+                          )}
                         </span>
                       </div>
                     </div>
